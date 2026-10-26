@@ -1,0 +1,14 @@
+node_modules/
+.next/
+dist/
+.env*
+!.env.example
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+artifacts/
+proxies/
+*.monter-cache/
+
+.pytest_cache/

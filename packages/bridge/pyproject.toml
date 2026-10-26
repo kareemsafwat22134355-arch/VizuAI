@@ -1,0 +1,23 @@
+[project]
+name = "monter-bridge"
+version = "0.1.0"
+description = "8GB-RAM-first local ingest bridge for MONTER"
+requires-python = ">=3.11"
+dependencies = [
+  "pydantic>=2.9,<3",
+  "orjson>=3.10,<4",
+  "scenedetect-headless>=0.7.2,<0.8"
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3,<9"]
+
+[project.scripts]
+monter = "monter_bridge.cli:main"
+
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

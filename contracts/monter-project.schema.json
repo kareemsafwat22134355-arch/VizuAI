@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vizuai.local/contracts/monter-project-0.1.schema.json",
+  "title": "MONTER Project Manifest 0.1",
+  "type": "object",
+  "required": ["schemaVersion", "projectId", "projectName", "createdAt", "sourceRootLabel", "sourceBytes", "proxyBytes", "assets"],
+  "properties": {
+    "schemaVersion": { "const": "monter-project-0.1" },
+    "projectId": { "type": "string", "minLength": 1 },
+    "projectName": { "type": "string", "minLength": 1 },
+    "createdAt": { "type": "string" },
+    "sourceRootLabel": { "type": "string", "minLength": 1 },
+    "sourceBytes": { "type": "integer", "minimum": 0 },
+    "proxyBytes": { "type": "integer", "minimum": 0 },
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "filename", "sourceRelPath", "sourceSizeBytes", "durationSeconds", "width", "height", "fps", "codec", "hasAudio"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "filename": { "type": "string", "minLength": 1 },
+          "sourceRelPath": { "type": "string", "minLength": 1 },
+          "sourceSizeBytes": { "type": "integer", "minimum": 0 },
+          "durationSeconds": { "type": "number", "minimum": 0 },
+          "width": { "type": ["integer", "null"] },
+          "height": { "type": ["integer", "null"] },
+          "fps": { "type": ["number", "null"] },
+          "codec": { "type": ["string", "null"] },
+          "hasAudio": { "type": "boolean" }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

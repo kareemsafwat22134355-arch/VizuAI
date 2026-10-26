@@ -1,0 +1,10 @@
+{
+  "name": "vizuai-monter",
+  "private": true,
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "dev": "npm --workspace apps/studio run dev",
+    "build": "npm --workspace apps/studio run build",
+    "test": "npm --workspace apps/studio run test"
+  }
+}

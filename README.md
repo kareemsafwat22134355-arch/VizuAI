@@ -1,13 +1,15 @@
 # VizuAI / MONTER
 
-VizuAI is the repository for MONTER, an editorial intelligence system for cinematic video editing.
+VizuAI is the repository for **MONTER**, a cinematic editorial intelligence system.
 
-## Direction
+MONTER does not upload giant RAW folders to the web. It separates media processing from editorial reasoning:
 
-MONTER separates heavy local media processing from web-based editorial intelligence:
+- `packages/bridge` — local, 8GB-RAM-first ingest/proxy engine.
+- `apps/studio` — Vercel-hosted workspace for assets, director intent, edit plans and later critic/transition reasoning.
+- `contracts` — portable data contracts shared between the two sides.
 
-- **Local Bridge** — indexes RAW footage, probes media, generates lightweight proxies, and produces portable project manifests.
-- **Studio** — visualizes projects, VIR data, director intent, edit plans, and pipeline status.
-- **RAW-first finalization** — edit decisions are created against proxy timecodes and relinked to original media for final render.
+## Development rule
 
-The project is currently in the initial architecture/bootstrap phase.
+Every pull request must pass Studio and Bridge tests before it is considered merge-ready.
+
+See `docs/ARCHITECTURE.md` and `docs/OPEN_SOURCE.md`.
