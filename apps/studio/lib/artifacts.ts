@@ -185,6 +185,24 @@ export type AdvancedAnalysisResults = {
   notes: string[];
 };
 
+export type BoundaryTransitionRefinement = {
+  boundaryIndex: number;
+  baseMechanism: TransitionCandidate["mechanism"];
+  refinedMechanism: TransitionCandidate["mechanism"];
+  status: "confirmed" | "demoted" | "unchanged" | "unresolved";
+  reason: string;
+  flowDirectionCompatibility?: number | null;
+  leftDirectionalCoherence?: number | null;
+  rightDirectionalCoherence?: number | null;
+  evidence: Record<string, string | number | boolean>;
+};
+export type TransitionRefinementReport = {
+  schemaVersion: "transition-refinement-0.1";
+  projectId: string;
+  boundaries: BoundaryTransitionRefinement[];
+  notes: string[];
+};
+
 export type DecisionScalar = string | number | boolean | null;
 export type DecisionKind = "shot_selection" | "trim" | "transition" | "timewarp" | "role" | "other";
 export type DecisionTargetType = "project" | "segment" | "boundary";
@@ -285,6 +303,7 @@ export type ArtifactBundle = {
   transitionOpportunities?: TransitionOpportunityReport;
   advancedAnalysis?: AdvancedAnalysisPlan;
   advancedResults?: AdvancedAnalysisResults;
+  transitionRefinement?: TransitionRefinementReport;
   corrections?: CorrectionLedger;
   reviews?: DecisionReviewLedger;
   reviewSummary?: DecisionReviewSummary;
@@ -332,6 +351,10 @@ export function parseArtifact(filename: string, value: unknown): Partial<Artifac
     if (value.schemaVersion !== "advanced-analysis-results-0.1" || !Array.isArray(value.boundaries) || typeof value.projectId !== "string") throw new Error(`${filename}: invalid advanced analysis results`);
     return { advancedResults: value as AdvancedAnalysisResults };
   }
+  if (filename.endsWith("transition-refinement.json") || value.schemaVersion === "transition-refinement-0.1") {
+    if (value.schemaVersion !== "transition-refinement-0.1" || !Array.isArray(value.boundaries) || typeof value.projectId !== "string") throw new Error(`${filename}: invalid transition refinement report`);
+    return { transitionRefinement: value as TransitionRefinementReport };
+  }
   if (filename.endsWith("human-corrections.json") || value.schemaVersion === "human-corrections-0.1") {
     if (value.schemaVersion !== "human-corrections-0.1" || !Array.isArray(value.corrections) || typeof value.projectId !== "string") throw new Error(`${filename}: invalid human correction ledger`);
     return { corrections: value as CorrectionLedger };
@@ -366,6 +389,7 @@ export function mergeArtifacts(current: ArtifactBundle, filename: string, value:
     next.transitionOpportunities?.projectId,
     next.advancedAnalysis?.projectId,
     next.advancedResults?.projectId,
+    next.transitionRefinement?.projectId,
     next.corrections?.projectId,
     next.reviews?.projectId,
     next.reviewSummary?.projectId,
