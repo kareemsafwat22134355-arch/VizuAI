@@ -49,6 +49,7 @@ def test_render_command_maps_optional_music_through_mix_graph():
     assert "[2:a]atrim=duration=4.000000" in joined
     assert "volume=-2.500dB" in joined
     assert "afade=t=out" in joined
+    assert "alimiter=limit=0.800000:attack=5:release=50:level=0:latency=1" in joined
     assert "-map [aout]" in joined
 
 
@@ -65,6 +66,7 @@ def test_render_command_compiles_real_j_cut_audio_overlap():
     assert "[1:a]atrim=start=0.750000:end=3.000000" in joined
     assert "adelay=1750:all=1" in joined
     assert "amix=inputs=2:duration=longest:dropout_transition=0:normalize=0" in joined
+    assert "alimiter=limit=0.800000:attack=5:release=50:level=0:latency=1" in joined
     assert "-map [aout]" in joined
     assert "-t 4.000000" in joined
 

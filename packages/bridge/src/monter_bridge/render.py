@@ -8,6 +8,10 @@ from .ctl_models import CtlProgram, CtlTransition, TimeWarpIntent
 from .models import MonterProject
 from .proxy import proxy_path_for
 
+AUDIO_LIMITER_LIMIT = 0.80
+AUDIO_LIMITER_ATTACK_MS = 5
+AUDIO_LIMITER_RELEASE_MS = 50
+
 
 def _clip_extensions(ctl: CtlProgram) -> tuple[list[float], list[float]]:
     before = [0.0 for _ in ctl.clips]
@@ -151,6 +155,15 @@ def _source_audio_filter(input_index: int, event_index: int, event: SourceAudioE
     return ",".join(parts) + f"[{label}]", label
 
 
+def _final_audio_bus(input_expression: str, duration_seconds: float) -> str:
+    return (
+        input_expression
+        + f"alimiter=limit={AUDIO_LIMITER_LIMIT:.6f}:attack={AUDIO_LIMITER_ATTACK_MS}:"
+        f"release={AUDIO_LIMITER_RELEASE_MS}:level=0:latency=1,"
+        f"atrim=duration={duration_seconds:.6f}[aout]"
+    )
+
+
 def _audio_filters(
     ctl: CtlProgram,
     project: MonterProject,
@@ -201,12 +214,14 @@ def _audio_filters(
     if not mix_labels:
         return filters, False
     if len(mix_labels) == 1:
-        filters.append(f"{mix_labels[0]}atrim=duration={ctl.duration_seconds:.6f}[aout]")
+        filters.append(_final_audio_bus(mix_labels[0], ctl.duration_seconds))
     else:
         filters.append(
-            "".join(mix_labels)
-            + f"amix=inputs={len(mix_labels)}:duration=longest:dropout_transition=0:normalize=0,"
-            f"atrim=duration={ctl.duration_seconds:.6f}[aout]"
+            _final_audio_bus(
+                "".join(mix_labels)
+                + f"amix=inputs={len(mix_labels)}:duration=longest:dropout_transition=0:normalize=0,",
+                ctl.duration_seconds,
+            )
         )
     return filters, True
 
