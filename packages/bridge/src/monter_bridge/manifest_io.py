@@ -10,7 +10,7 @@ from .audio_edit_models import AudioEditPlan
 from .ctl_models import CtlProgram
 from .microscope_models import MicroscopeReport, StyleProfile
 from .models import MonterProject
-from .planning_models import EditPlan
+from .planning_models import DirectorPlan, EditPlan
 
 
 def load_project(path: Path) -> MonterProject:
@@ -19,6 +19,10 @@ def load_project(path: Path) -> MonterProject:
 
 def load_vir(path: Path) -> VirProject:
     return VirProject.model_validate(orjson.loads(path.read_bytes()))
+
+
+def load_director_plan(path: Path) -> DirectorPlan:
+    return DirectorPlan.model_validate(orjson.loads(path.read_bytes()))
 
 
 def load_edit_plan(path: Path) -> EditPlan:
