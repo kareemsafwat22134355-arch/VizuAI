@@ -91,3 +91,17 @@ def test_project_level_correction_can_omit_target_ref():
         reason="The payoff needs a silence pocket before the logo.",
     )
     assert correction.target_ref is None
+
+
+def test_non_finite_numeric_evidence_is_rejected():
+    ledger = CorrectionLedger.new("p")
+    with pytest.raises(ValueError, match="finite number"):
+        record_correction(
+            ledger,
+            kind="transition",
+            target_type="boundary",
+            target_ref="2",
+            ai_decision={"relationScore": float("nan")},
+            human_decision={"relationScore": 0.7},
+            reason="fixture",
+        )
