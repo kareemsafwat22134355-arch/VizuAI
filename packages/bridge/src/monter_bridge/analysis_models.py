@@ -53,7 +53,7 @@ class VirProject(PortableModel):
     project_id: str
     created_at: str
     shots: list[ShotAnalysis]
-    warnings: list[str] = []
+    warnings: list[str] = Field(default_factory=list)
 
     @classmethod
     def new(cls, project_id: str, shots: list[ShotAnalysis], warnings: list[str] | None = None) -> "VirProject":
