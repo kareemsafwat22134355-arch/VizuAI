@@ -7,30 +7,15 @@ export const MAX_UNCOMPRESSED_BUNDLE_BYTES = 768 * 1024 * 1024;
 export const MAX_ENTRY_BYTES = 512 * 1024 * 1024;
 
 const JSON_ARTIFACTS = [
-  "project.monter.json",
-  "vir.monter.json",
-  "director-plan.json",
-  "edit-plan.json",
-  "ctl.json",
-  "critic-report.json",
-  "transition-opportunities.json",
-  "advanced-analysis-plan.json",
-  "advanced-analysis-results.json",
-  "transition-refinement.json",
-  "human-corrections.json",
-  "decision-reviews.json",
-  "decision-review-summary.json",
-  "production-report.json",
-  "audio-analysis.json",
+  "project.monter.json", "vir.monter.json", "director-plan.json", "edit-plan.json", "ctl.json",
+  "critic-report.json", "transition-opportunities.json", "advanced-analysis-plan.json",
+  "advanced-analysis-results.json", "transition-refinement.json", "human-corrections.json",
+  "decision-reviews.json", "decision-review-summary.json", "production-report.json", "audio-analysis.json",
 ] as const;
 
 const ALLOWED_ENTRIES = new Set<string>([
-  "bundle-manifest.json",
-  ...JSON_ARTIFACTS,
-  "render-analysis.json",
-  "edit.otio",
-  "rough-cut.mp4",
-  "rough-cut.audio.mp4",
+  "bundle-manifest.json", ...JSON_ARTIFACTS, "render-analysis.json", "final-critic-report.json",
+  "edit.otio", "rough-cut.mp4", "rough-cut.audio.mp4",
 ]);
 
 export type MonterBundleManifest = {
@@ -59,22 +44,43 @@ export type RenderAnalysisReport = {
   longestFreezeSeconds: number;
   energyAlignment: number;
   energyBins: Array<{
-    index: number;
-    startSeconds: number;
-    endSeconds: number;
-    meanMotion: number;
-    meanLuma: number;
-    blackFraction: number;
-    freezeFraction: number;
-    targetEnergy: number;
+    index: number; startSeconds: number; endSeconds: number; meanMotion: number; meanLuma: number;
+    blackFraction: number; freezeFraction: number; targetEnergy: number;
   }>;
   findings: Array<{ code: string; severity: "info" | "warning" | "error"; message: string }>;
+  notes: string[];
+};
+
+export type FinalCriticReport = {
+  schemaVersion: "final-critic-0.1";
+  projectId: string;
+  status: "pass" | "needs_revision" | "needs_review";
+  automaticRevisionCandidates: number;
+  manualReviewFindings: number;
+  metrics: Array<{
+    name: string;
+    domain: "editorial" | "render_integrity" | "audio_integrity";
+    value: number;
+    target: string;
+    passed: boolean;
+  }>;
+  findings: Array<{
+    code: string;
+    domain: "editorial" | "render_integrity" | "audio_integrity";
+    severity: "info" | "warning" | "error";
+    reviseability: "automatic_candidate" | "manual_only" | "not_applicable";
+    message: string;
+    sourceArtifact: string;
+    segmentId?: string | null;
+    boundaryIndex?: number | null;
+  }>;
   notes: string[];
 };
 
 export type ImportedMonterBundle = {
   artifacts: ArtifactBundle;
   renderAnalysis?: RenderAnalysisReport;
+  finalCritic?: FinalCriticReport;
   manifest: MonterBundleManifest;
   preview?: Blob;
   ignoredEntries: string[];
@@ -89,38 +95,30 @@ function isUnsafeArchivePath(name: string) {
 
 function parseManifest(bytes: Uint8Array): MonterBundleManifest {
   const value = JSON.parse(strFromU8(bytes)) as Partial<MonterBundleManifest>;
-  if (value.schemaVersion !== "monter-bundle-0.1") {
-    throw new Error("Unsupported MONTER bundle schema version.");
-  }
-  if (value.rawMediaIncluded !== false || value.proxiesIncluded !== false) {
-    throw new Error("Unsafe MONTER bundle: RAW media and proxies must not be embedded.");
-  }
-  if (!Array.isArray(value.includedArtifacts) || typeof value.createdAt !== "string") {
-    throw new Error("Invalid MONTER bundle manifest.");
-  }
+  if (value.schemaVersion !== "monter-bundle-0.1") throw new Error("Unsupported MONTER bundle schema version.");
+  if (value.rawMediaIncluded !== false || value.proxiesIncluded !== false) throw new Error("Unsafe MONTER bundle: RAW media and proxies must not be embedded.");
+  if (!Array.isArray(value.includedArtifacts) || typeof value.createdAt !== "string") throw new Error("Invalid MONTER bundle manifest.");
   return value as MonterBundleManifest;
 }
 
 function parseRenderAnalysis(bytes: Uint8Array): RenderAnalysisReport {
   const value = JSON.parse(strFromU8(bytes)) as Partial<RenderAnalysisReport>;
-  if (
-    value.schemaVersion !== "render-analysis-0.1"
-    || typeof value.projectId !== "string"
-    || typeof value.status !== "string"
-    || typeof value.sampledFrames !== "number"
-    || !Array.isArray(value.energyBins)
-    || !Array.isArray(value.findings)
-  ) {
+  if (value.schemaVersion !== "render-analysis-0.1" || typeof value.projectId !== "string" || typeof value.status !== "string" || typeof value.sampledFrames !== "number" || !Array.isArray(value.energyBins) || !Array.isArray(value.findings)) {
     throw new Error("render-analysis.json: invalid render re-analysis report");
   }
   return value as RenderAnalysisReport;
 }
 
-export async function importMonterBundle(file: Blob): Promise<ImportedMonterBundle> {
-  if (file.size > MAX_COMPRESSED_BUNDLE_BYTES) {
-    throw new Error("MONTER bundle is too large for safe browser-local inspection. Re-export it with --no-preview.");
+function parseFinalCritic(bytes: Uint8Array): FinalCriticReport {
+  const value = JSON.parse(strFromU8(bytes)) as Partial<FinalCriticReport>;
+  if (value.schemaVersion !== "final-critic-0.1" || typeof value.projectId !== "string" || typeof value.status !== "string" || typeof value.automaticRevisionCandidates !== "number" || !Array.isArray(value.metrics) || !Array.isArray(value.findings)) {
+    throw new Error("final-critic-report.json: invalid final critic report");
   }
+  return value as FinalCriticReport;
+}
 
+export async function importMonterBundle(file: Blob): Promise<ImportedMonterBundle> {
+  if (file.size > MAX_COMPRESSED_BUNDLE_BYTES) throw new Error("MONTER bundle is too large for safe browser-local inspection. Re-export it with --no-preview.");
   const compressed = new Uint8Array(await file.arrayBuffer());
   let totalAcceptedBytes = 0;
   const seenEntries: string[] = [];
@@ -129,20 +127,11 @@ export async function importMonterBundle(file: Blob): Promise<ImportedMonterBund
   const entries = unzipSync(compressed, {
     filter(entry) {
       seenEntries.push(entry.name);
-      if (isUnsafeArchivePath(entry.name)) {
-        throw new Error(`Unsafe path in MONTER bundle: ${entry.name}`);
-      }
-      if (!ALLOWED_ENTRIES.has(entry.name)) {
-        ignoredEntries.push(entry.name);
-        return false;
-      }
-      if (entry.originalSize > MAX_ENTRY_BYTES) {
-        throw new Error(`MONTER bundle entry is too large: ${entry.name}`);
-      }
+      if (isUnsafeArchivePath(entry.name)) throw new Error(`Unsafe path in MONTER bundle: ${entry.name}`);
+      if (!ALLOWED_ENTRIES.has(entry.name)) { ignoredEntries.push(entry.name); return false; }
+      if (entry.originalSize > MAX_ENTRY_BYTES) throw new Error(`MONTER bundle entry is too large: ${entry.name}`);
       totalAcceptedBytes += entry.originalSize;
-      if (totalAcceptedBytes > MAX_UNCOMPRESSED_BUNDLE_BYTES) {
-        throw new Error("MONTER bundle expands beyond the browser safety limit.");
-      }
+      if (totalAcceptedBytes > MAX_UNCOMPRESSED_BUNDLE_BYTES) throw new Error("MONTER bundle expands beyond the browser safety limit.");
       return true;
     },
   });
@@ -158,19 +147,17 @@ export async function importMonterBundle(file: Blob): Promise<ImportedMonterBund
     if (!bytes) continue;
     artifacts = mergeArtifacts(artifacts, filename, JSON.parse(strFromU8(bytes)));
   }
-
-  if (!artifacts.project) {
-    throw new Error("MONTER bundle is missing a valid project.monter.json artifact.");
-  }
+  if (!artifacts.project) throw new Error("MONTER bundle is missing a valid project.monter.json artifact.");
 
   const renderAnalysisBytes = entries["render-analysis.json"];
   const renderAnalysis = renderAnalysisBytes ? parseRenderAnalysis(renderAnalysisBytes) : undefined;
-  if (renderAnalysis && renderAnalysis.projectId !== artifacts.project.projectId) {
-    throw new Error("render-analysis.json: projectId does not match the currently loaded bundle");
-  }
+  if (renderAnalysis && renderAnalysis.projectId !== artifacts.project.projectId) throw new Error("render-analysis.json: projectId does not match the currently loaded bundle");
+
+  const finalCriticBytes = entries["final-critic-report.json"];
+  const finalCritic = finalCriticBytes ? parseFinalCritic(finalCriticBytes) : undefined;
+  if (finalCritic && finalCritic.projectId !== artifacts.project.projectId) throw new Error("final-critic-report.json: projectId does not match the currently loaded bundle");
 
   const previewBytes = entries["rough-cut.audio.mp4"] ?? entries["rough-cut.mp4"];
   const preview = previewBytes ? new Blob([previewBytes], { type: "video/mp4" }) : undefined;
-
-  return { artifacts, renderAnalysis, manifest, preview, ignoredEntries };
+  return { artifacts, renderAnalysis, finalCritic, manifest, preview, ignoredEntries };
 }
