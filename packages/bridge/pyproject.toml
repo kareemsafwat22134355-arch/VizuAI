@@ -1,6 +1,6 @@
 [project]
 name = "monter-bridge"
-version = "0.17.0"
+version = "0.18.0"
 description = "8GB-RAM-first local cinematic intelligence bridge for MONTER"
 requires-python = ">=3.11"
 dependencies = [
@@ -24,6 +24,7 @@ monter-bundle = "monter_bridge.bundle:main"
 monter-microscope = "monter_bridge.microscope_cli:microscope_main"
 monter-style-profile = "monter_bridge.microscope_cli:style_profile_main"
 monter-transition-opportunities = "monter_bridge.transition_cli:main"
+monter-transition-refine = "monter_bridge.transition_refinement_cli:main"
 monter-correction = "monter_bridge.correction_cli:main"
 monter-review = "monter_bridge.review_cli:review_main"
 monter-review-summary = "monter_bridge.review_cli:summary_main"
