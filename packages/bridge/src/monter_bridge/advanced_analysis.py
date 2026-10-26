@@ -25,13 +25,15 @@ def _windows(ctl: CtlProgram, boundary: BoundaryTransitionOpportunity, radius: f
     left = ctl.clips[left_index]
     right = ctl.clips[right_index]
 
+    # Stay inside the chosen source ranges except for handles already verified by
+    # transition-opportunity synthesis. No advanced request may invent source time.
     left_after = min(boundary.outgoing_handle_seconds, radius)
     right_before = min(boundary.incoming_handle_seconds, radius)
     left_window = SourceAnalysisWindow(
         segment_id=left.id,
         asset_id=left.asset_id,
         shot_id=left.shot_id,
-        source_start_seconds=max(0.0, left.source_out_seconds - radius),
+        source_start_seconds=max(left.source_in_seconds, left.source_out_seconds - radius),
         source_end_seconds=left.source_out_seconds + left_after,
     )
     right_window = SourceAnalysisWindow(
@@ -148,7 +150,6 @@ def build_advanced_analysis_plan(
 
     candidates.sort(key=lambda request: (-request.priority, request.boundary_index))
     selected = candidates[:max_boundaries]
-    selected_ids = {request.boundary_index for request in selected}
     for request in candidates[max_boundaries:]:
         skipped.append(SkippedBoundary(
             boundary_index=request.boundary_index,
