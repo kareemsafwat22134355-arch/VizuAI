@@ -52,6 +52,37 @@ def test_share_bundle_excludes_proxies_and_raw(tmp_path: Path):
         ),
         encoding="utf-8",
     )
+    (work_dir / "decision-reviews.json").write_text(
+        json.dumps(
+            {
+                "schemaVersion": "decision-reviews-0.1",
+                "projectId": "p1",
+                "createdAt": "2026-01-01T00:00:00Z",
+                "updatedAt": "2026-01-01T00:02:00Z",
+                "reviews": [],
+                "notes": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (work_dir / "decision-review-summary.json").write_text(
+        json.dumps(
+            {
+                "schemaVersion": "decision-review-summary-0.1",
+                "projectId": "p1",
+                "generatedAt": "2026-01-01T00:03:00Z",
+                "reviewed": 0,
+                "accepted": 0,
+                "corrected": 0,
+                "acceptanceRate": 0.0,
+                "byKind": {},
+                "byDirectorRole": {},
+                "byTransitionMechanism": {},
+                "notes": [],
+            }
+        ),
+        encoding="utf-8",
+    )
     (work_dir / "rough-cut.mp4").write_bytes(b"preview")
     proxies = work_dir / "proxies"
     proxies.mkdir()
@@ -70,6 +101,8 @@ def test_share_bundle_excludes_proxies_and_raw(tmp_path: Path):
         assert "project.monter.json" in names
         assert "vir.monter.json" in names
         assert "human-corrections.json" in names
+        assert "decision-reviews.json" in names
+        assert "decision-review-summary.json" in names
         assert "rough-cut.mp4" in names
         assert all(not name.startswith("proxies/") for name in names)
 
@@ -77,6 +110,8 @@ def test_share_bundle_excludes_proxies_and_raw(tmp_path: Path):
         assert manifest["rawMediaIncluded"] is False
         assert manifest["proxiesIncluded"] is False
         assert "human-corrections.json" in manifest["includedArtifacts"]
+        assert "decision-reviews.json" in manifest["includedArtifacts"]
+        assert "decision-review-summary.json" in manifest["includedArtifacts"]
 
 
 def test_share_bundle_can_exclude_preview(tmp_path: Path):

@@ -87,6 +87,63 @@ function correctionsJson() {
   });
 }
 
+function reviewsJson() {
+  return JSON.stringify({
+    schemaVersion: "decision-reviews-0.1",
+    projectId: "project_test",
+    createdAt: "2026-10-26T00:00:00Z",
+    updatedAt: "2026-10-26T00:03:00Z",
+    reviews: [
+      {
+        id: "review_1",
+        kind: "transition",
+        targetType: "boundary",
+        targetRef: "1",
+        aiDecision: { mechanism: "directional_bridge" },
+        outcome: "corrected",
+        correctionId: "correction_1",
+        context: { directorRole: "rupture" },
+        reason: "The rupture should stay abrupt.",
+        source: "cli",
+        createdAt: "2026-10-26T00:01:00Z",
+      },
+      {
+        id: "review_2",
+        kind: "transition",
+        targetType: "boundary",
+        targetRef: "2",
+        aiDecision: { mechanism: "hard_cut" },
+        outcome: "accepted",
+        correctionId: null,
+        context: { directorRole: "rupture" },
+        reason: "Accepted as-is.",
+        source: "cli",
+        createdAt: "2026-10-26T00:03:00Z",
+      },
+    ],
+    notes: [],
+  });
+}
+
+function reviewSummaryJson() {
+  return JSON.stringify({
+    schemaVersion: "decision-review-summary-0.1",
+    projectId: "project_test",
+    generatedAt: "2026-10-26T00:04:00Z",
+    reviewed: 2,
+    accepted: 1,
+    corrected: 1,
+    acceptanceRate: 0.5,
+    byKind: { transition: { reviewed: 2, accepted: 1, corrected: 1, acceptanceRate: 0.5 } },
+    byDirectorRole: { rupture: { reviewed: 2, accepted: 1, corrected: 1, acceptanceRate: 0.5 } },
+    byTransitionMechanism: {
+      directional_bridge: { reviewed: 1, accepted: 0, corrected: 1, acceptanceRate: 0 },
+      hard_cut: { reviewed: 1, accepted: 1, corrected: 0, acceptanceRate: 1 },
+    },
+    notes: [],
+  });
+}
+
 function bundleFile(entries: Record<string, Uint8Array>) {
   return new Blob([zipSync(entries)], { type: "application/zip" });
 }
@@ -132,6 +189,22 @@ describe("importMonterBundle", () => {
     expect(correction?.context.directorRole).toBe("rupture");
   });
 
+  it("loads decision review denominators and summary rates", async () => {
+    const file = bundleFile({
+      "bundle-manifest.json": strToU8(manifest({ includedArtifacts: ["project.monter.json", "human-corrections.json", "decision-reviews.json", "decision-review-summary.json"] })),
+      "project.monter.json": strToU8(projectJson()),
+      "human-corrections.json": strToU8(correctionsJson()),
+      "decision-reviews.json": strToU8(reviewsJson()),
+      "decision-review-summary.json": strToU8(reviewSummaryJson()),
+    });
+
+    const result = await importMonterBundle(file);
+    expect(result.artifacts.reviews?.reviews).toHaveLength(2);
+    expect(result.artifacts.reviewSummary?.reviewed).toBe(2);
+    expect(result.artifacts.reviewSummary?.acceptanceRate).toBe(0.5);
+    expect(result.artifacts.reviewSummary?.byTransitionMechanism.directional_bridge.acceptanceRate).toBe(0);
+  });
+
   it("rejects a correction ledger from a different project", async () => {
     const mismatched = JSON.parse(correctionsJson());
     mismatched.projectId = "another_project";
@@ -141,6 +214,17 @@ describe("importMonterBundle", () => {
       "human-corrections.json": strToU8(JSON.stringify(mismatched)),
     });
 
+    await expect(importMonterBundle(file)).rejects.toThrow(/projectId does not match/i);
+  });
+
+  it("rejects review evidence from a different project", async () => {
+    const mismatched = JSON.parse(reviewSummaryJson());
+    mismatched.projectId = "another_project";
+    const file = bundleFile({
+      "bundle-manifest.json": strToU8(manifest()),
+      "project.monter.json": strToU8(projectJson()),
+      "decision-review-summary.json": strToU8(JSON.stringify(mismatched)),
+    });
     await expect(importMonterBundle(file)).rejects.toThrow(/projectId does not match/i);
   });
 

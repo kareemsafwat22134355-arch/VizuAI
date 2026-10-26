@@ -1,7 +1,7 @@
 "use client";
 
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
-import type { ArtifactBundle, DecisionScalar } from "@/lib/artifacts";
+import type { ArtifactBundle, DecisionScalar, ReviewBucket } from "@/lib/artifacts";
 import { mergeArtifacts } from "@/lib/artifacts";
 import { importMonterBundle } from "@/lib/bundle-import";
 import { Waveform } from "./Waveform";
@@ -21,6 +21,19 @@ function formatDecision(values: Record<string, DecisionScalar>) {
   const entries = Object.entries(values);
   if (entries.length === 0) return "—";
   return entries.map(([key, value]) => `${metricLabel(key)}=${String(value)}`).join(" · ");
+}
+
+function formatRate(value: number) {
+  return `${Math.round(value * 100)}%`;
+}
+
+function ReviewBucketRow({ label, bucket }: { label: string; bucket: ReviewBucket }) {
+  return <div className="assetRow">
+    <div><strong>{metricLabel(label)}</strong><span>{bucket.reviewed} reviewed</span></div>
+    <span>{bucket.accepted} accepted</span>
+    <span>{bucket.corrected} corrected</span>
+    <span>{formatRate(bucket.acceptanceRate)}</span>
+  </div>;
 }
 
 export function StudioClient() {
@@ -96,6 +109,7 @@ export function StudioClient() {
         <a className="navItem" href="#timeline">Timeline</a>
         <a className="navItem" href="#transitions">Transitions</a>
         <a className="navItem" href="#corrections">Corrections</a>
+        <a className="navItem" href="#reviews">Reviews</a>
         <a className="navItem" href="#critic">Critic</a>
       </nav>
       <div className="sidebarFooter"><span className="tinyLabel">PRIVACY</span><strong>Local files stay local</strong><p>`.monter.zip`, JSON, video and audio are decoded through browser File APIs. Studio does not upload the project to a server.</p></div>
@@ -169,7 +183,22 @@ export function StudioClient() {
             <p>{correction.reason}</p>
             {Object.keys(correction.context).length > 0 && <div className="clipSignals"><span>context · {formatDecision(correction.context)}</span></div>}
             <small>{correction.source} · {correction.createdAt}</small>
-          </div>)}</div> : <div className="emptyState">No `human-corrections.json` loaded. v0.14 treats corrections as supervised evidence only; it does not auto-apply them to future edits.</div>}
+          </div>)}</div> : <div className="emptyState">No `human-corrections.json` loaded. Corrections remain supervised evidence only.</div>}
+        </article>
+
+        <article className="card assetsCard" id="reviews">
+          <div className="sectionHeading"><div><p className="label">DECISION REVIEW</p><h2>Acceptance denominator</h2></div><span className="pill">{bundle.reviewSummary?.reviewed ?? bundle.reviews?.reviews.length ?? 0} reviewed</span></div>
+          {bundle.reviewSummary ? <>
+            <section className="statsGrid" aria-label="Decision review rates">
+              <article className="statCard"><p className="label">REVIEWED</p><strong className="statValue">{bundle.reviewSummary.reviewed}</strong><span className="statNote">human-inspected decisions</span></article>
+              <article className="statCard"><p className="label">ACCEPTED</p><strong className="statValue">{bundle.reviewSummary.accepted}</strong><span className="statNote">AI kept as-is</span></article>
+              <article className="statCard"><p className="label">CORRECTED</p><strong className="statValue">{bundle.reviewSummary.corrected}</strong><span className="statNote">linked human overrides</span></article>
+              <article className="statCard"><p className="label">ACCEPTANCE</p><strong className="statValue">{formatRate(bundle.reviewSummary.acceptanceRate)}</strong><span className="statNote">reviewed denominator</span></article>
+            </section>
+            {Object.keys(bundle.reviewSummary.byTransitionMechanism).length > 0 && <div className="assetTable"><p className="label">BY TRANSITION MECHANISM</p>{Object.entries(bundle.reviewSummary.byTransitionMechanism).map(([label, bucket]) => <ReviewBucketRow key={label} label={label} bucket={bucket} />)}</div>}
+            {Object.keys(bundle.reviewSummary.byDirectorRole).length > 0 && <div className="assetTable"><p className="label">BY DIRECTOR ROLE</p>{Object.entries(bundle.reviewSummary.byDirectorRole).map(([label, bucket]) => <ReviewBucketRow key={label} label={label} bucket={bucket} />)}</div>}
+            <div className="findingList">{bundle.reviewSummary.notes.map((note) => <div className="finding finding-info" key={note}><span>{note}</span></div>)}</div>
+          </> : <div className="emptyState">Load `decision-review-summary.json`. Correction-only history is not used as an acceptance denominator.</div>}
         </article>
 
         <article className="card criticCard" id="critic">

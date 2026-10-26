@@ -125,10 +125,13 @@ export type TransitionOpportunityReport = {
 };
 
 export type DecisionScalar = string | number | boolean | null;
+export type DecisionKind = "shot_selection" | "trim" | "transition" | "timewarp" | "role" | "other";
+export type DecisionTargetType = "project" | "segment" | "boundary";
+
 export type HumanCorrection = {
   id: string;
-  kind: "shot_selection" | "trim" | "transition" | "timewarp" | "role" | "other";
-  targetType: "project" | "segment" | "boundary";
+  kind: DecisionKind;
+  targetType: DecisionTargetType;
   targetRef?: string | null;
   aiDecision: Record<string, DecisionScalar>;
   humanDecision: Record<string, DecisionScalar>;
@@ -144,6 +147,50 @@ export type CorrectionLedger = {
   createdAt: string;
   updatedAt: string;
   corrections: HumanCorrection[];
+  notes: string[];
+};
+
+export type DecisionReview = {
+  id: string;
+  kind: DecisionKind;
+  targetType: DecisionTargetType;
+  targetRef?: string | null;
+  aiDecision: Record<string, DecisionScalar>;
+  outcome: "accepted" | "corrected";
+  correctionId?: string | null;
+  context: Record<string, DecisionScalar>;
+  reason: string;
+  source: "cli" | "studio" | "import" | "manual";
+  createdAt: string;
+};
+
+export type DecisionReviewLedger = {
+  schemaVersion: "decision-reviews-0.1";
+  projectId: string;
+  createdAt: string;
+  updatedAt: string;
+  reviews: DecisionReview[];
+  notes: string[];
+};
+
+export type ReviewBucket = {
+  reviewed: number;
+  accepted: number;
+  corrected: number;
+  acceptanceRate: number;
+};
+
+export type DecisionReviewSummary = {
+  schemaVersion: "decision-review-summary-0.1";
+  projectId: string;
+  generatedAt: string;
+  reviewed: number;
+  accepted: number;
+  corrected: number;
+  acceptanceRate: number;
+  byKind: Record<string, ReviewBucket>;
+  byDirectorRole: Record<string, ReviewBucket>;
+  byTransitionMechanism: Record<string, ReviewBucket>;
   notes: string[];
 };
 
@@ -176,6 +223,8 @@ export type ArtifactBundle = {
   ctl?: CtlProgram;
   transitionOpportunities?: TransitionOpportunityReport;
   corrections?: CorrectionLedger;
+  reviews?: DecisionReviewLedger;
+  reviewSummary?: DecisionReviewSummary;
   critic?: CriticReport;
   production?: ProductionReport;
 };
@@ -216,6 +265,14 @@ export function parseArtifact(filename: string, value: unknown): Partial<Artifac
     if (value.schemaVersion !== "human-corrections-0.1" || !Array.isArray(value.corrections) || typeof value.projectId !== "string") throw new Error(`${filename}: invalid human correction ledger`);
     return { corrections: value as CorrectionLedger };
   }
+  if (filename.endsWith("decision-reviews.json") || value.schemaVersion === "decision-reviews-0.1") {
+    if (value.schemaVersion !== "decision-reviews-0.1" || !Array.isArray(value.reviews) || typeof value.projectId !== "string") throw new Error(`${filename}: invalid decision review ledger`);
+    return { reviews: value as DecisionReviewLedger };
+  }
+  if (filename.endsWith("decision-review-summary.json") || value.schemaVersion === "decision-review-summary-0.1") {
+    if (value.schemaVersion !== "decision-review-summary-0.1" || !isNumber(value.reviewed) || typeof value.projectId !== "string") throw new Error(`${filename}: invalid decision review summary`);
+    return { reviewSummary: value as DecisionReviewSummary };
+  }
   if (filename.endsWith("critic-report.json")) {
     if (!Array.isArray(value.metrics) || !Array.isArray(value.findings)) throw new Error(`${filename}: invalid critic report`);
     return { critic: value as CriticReport };
@@ -237,6 +294,8 @@ export function mergeArtifacts(current: ArtifactBundle, filename: string, value:
     next.ctl?.projectId,
     next.transitionOpportunities?.projectId,
     next.corrections?.projectId,
+    next.reviews?.projectId,
+    next.reviewSummary?.projectId,
     next.critic?.projectId,
     next.production?.projectId,
   ].filter(Boolean);
