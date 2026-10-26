@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from datetime import datetime, timezone
 from typing import Literal
 
@@ -12,6 +13,12 @@ CorrectionKind = Literal["shot_selection", "trim", "transition", "timewarp", "ro
 CorrectionTargetType = Literal["project", "segment", "boundary"]
 CorrectionSource = Literal["cli", "studio", "import", "manual"]
 DecisionScalar = str | int | float | bool | None
+
+
+def _validate_scalar_map(values: dict[str, DecisionScalar], label: str) -> None:
+    for key, value in values.items():
+        if isinstance(value, float) and not math.isfinite(value):
+            raise ValueError(f"{label}.{key} must be a finite number")
 
 
 class HumanCorrection(PortableModel):
@@ -32,6 +39,9 @@ class HumanCorrection(PortableModel):
             raise ValueError("segment/boundary corrections require target_ref")
         if self.ai_decision == self.human_decision:
             raise ValueError("human correction must differ from the AI decision")
+        _validate_scalar_map(self.ai_decision, "ai_decision")
+        _validate_scalar_map(self.human_decision, "human_decision")
+        _validate_scalar_map(self.context, "context")
         return self
 
 
