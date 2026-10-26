@@ -24,12 +24,12 @@ def test_compile_ctl_motivates_motion_peak_cut():
         mean_motion=0.5, peak_motion=1, motion_samples=[], edit_anchors=[],
     )
     ctl = compile_ctl(edit_for(shot_a, shot_b), VirProject.new("p", [shot_a, shot_b]))
-    assert ctl.schema_version == "ctl-0.1"
+    assert ctl.schema_version == "ctl-0.2"
     assert ctl.transitions[0].mechanism == "motion_peak_cut"
     assert ctl.transitions[0].duration_seconds == 0
 
 
-def test_compile_ctl_prefers_confident_global_motion_match():
+def test_compile_ctl_prefers_confident_global_motion_match_when_bridge_has_no_incoming_handle():
     motion = GlobalMotionSummary(dominant_screen_direction="right", zoom_direction="static", confidence=.9)
     shot_a = ShotAnalysis(id="a", asset_id="a", range=TimeRange(start_seconds=0, end_seconds=3), mean_motion=1, peak_motion=2, motion_samples=[], edit_anchors=[], global_motion=motion)
     shot_b = ShotAnalysis(id="b", asset_id="b", range=TimeRange(start_seconds=0, end_seconds=3), mean_motion=1, peak_motion=2, motion_samples=[], edit_anchors=[], global_motion=motion)
@@ -39,3 +39,50 @@ def test_compile_ctl_prefers_confident_global_motion_match():
     assert ctl.transitions[0].mechanism == "motion_match_cut"
     assert ctl.transitions[0].relation_score is not None
     assert ctl.transitions[0].evidence["leftDirection"] == "right"
+    assert ctl.transitions[0].duration_seconds == 0
+
+
+def test_compile_ctl_emits_directional_bridge_when_handles_and_motion_support_it():
+    motion = GlobalMotionSummary(dominant_screen_direction="right", zoom_direction="static", confidence=.9)
+    shot_a = ShotAnalysis(id="a", asset_id="a", range=TimeRange(start_seconds=0, end_seconds=3), mean_motion=1, peak_motion=1, motion_samples=[], edit_anchors=[], global_motion=motion)
+    shot_b = ShotAnalysis(id="b", asset_id="b", range=TimeRange(start_seconds=3, end_seconds=6), mean_motion=1, peak_motion=1, motion_samples=[], edit_anchors=[], global_motion=motion)
+    edit = EditPlan(
+        project_id="p", target_duration_seconds=4, actual_duration_seconds=4,
+        segments=[
+            EditSegment(id="s1", asset_id="a", shot_id="a", source_in_seconds=.4, source_out_seconds=2.6, timeline_in_seconds=0, timeline_out_seconds=2, role="build", target_energy=.5, shot_energy=.6, confidence=.9, reason="x"),
+            EditSegment(id="s2", asset_id="b", shot_id="b", source_in_seconds=3.4, source_out_seconds=5.6, timeline_in_seconds=2, timeline_out_seconds=4, role="reveal", target_energy=.5, shot_energy=.4, confidence=.8, reason="y"),
+        ],
+    )
+
+    ctl = compile_ctl(edit, VirProject.new("p", [shot_a, shot_b]))
+    transition = ctl.transitions[0]
+
+    assert transition.mechanism == "directional_bridge"
+    assert transition.duration_seconds == .12
+    assert transition.parameters["screenDirection"] == "right"
+    assert transition.evidence["adjacentTimewarp"] is False
+
+
+def test_directional_bridge_falls_back_when_adjacent_segment_has_timewarp():
+    motion = GlobalMotionSummary(dominant_screen_direction="right", zoom_direction="static", confidence=.9)
+    shot_a = ShotAnalysis(
+        id="a", asset_id="a", range=TimeRange(start_seconds=0, end_seconds=4),
+        mean_motion=.5, peak_motion=2.5, motion_samples=[],
+        edit_anchors=[EditAnchor(type="motion_peak", time_seconds=1.5, confidence=.95, reason="peak")],
+        global_motion=motion,
+    )
+    shot_b = ShotAnalysis(id="b", asset_id="b", range=TimeRange(start_seconds=4, end_seconds=8), mean_motion=1, peak_motion=1, motion_samples=[], edit_anchors=[], global_motion=motion)
+    edit = EditPlan(
+        project_id="p", target_duration_seconds=4, actual_duration_seconds=4,
+        segments=[
+            EditSegment(id="s1", asset_id="a", shot_id="a", source_in_seconds=.4, source_out_seconds=2.8, timeline_in_seconds=0, timeline_out_seconds=2, role="escalate", target_energy=.7, shot_energy=.8, confidence=.9, reason="x"),
+            EditSegment(id="s2", asset_id="b", shot_id="b", source_in_seconds=4.4, source_out_seconds=6.4, timeline_in_seconds=2, timeline_out_seconds=4, role="reveal", target_energy=.5, shot_energy=.4, confidence=.8, reason="y"),
+        ],
+    )
+
+    ctl = compile_ctl(edit, VirProject.new("p", [shot_a, shot_b]))
+
+    assert ctl.time_warps
+    assert ctl.transitions[0].mechanism == "motion_match_cut"
+    assert ctl.transitions[0].evidence["bridgeDeferred"] is True
+    assert ctl.transitions[0].evidence["bridgeDeferredReason"] == "adjacent_timewarp"
