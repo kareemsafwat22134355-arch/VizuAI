@@ -131,6 +131,7 @@ def main() -> None:
     produce.add_argument("--no-sound-pass", action="store_true", help="skip source-audio analysis and autonomous J/L decisions")
     produce.add_argument("--max-jl-cuts", type=int, default=2, help="maximum autonomous non-sync J/L cuts")
     produce.add_argument("--audio-safe-threshold-dbfs", type=float, default=-0.5, help="decoded sample-peak gate after audio render")
+    produce.add_argument("--no-post-render-revision", action="store_true", help="disable the single transactional post-render edit candidate")
     produce.add_argument("--no-render", action="store_true", help="skip MP4 rendering but produce every planning/intelligence artifact")
     add_shared_media_args(produce)
     add_plan_args(produce)
@@ -227,10 +228,12 @@ def main() -> None:
             run_sound_pass=not args.no_sound_pass,
             max_jl_cuts=args.max_jl_cuts,
             audio_safety_threshold_dbfs=args.audio_safe_threshold_dbfs,
+            run_post_render_revision=not args.no_post_render_revision,
         )
         print(
             f"Production {report.status}: {report.assets_ingested} assets, {report.shots_analyzed} shots, "
-            f"{report.edit_segments} edit segments, {report.revision_iterations} revision(s), "
+            f"{report.edit_segments} edit segments, {report.revision_iterations} pre-render revision(s), "
+            f"postRender={report.post_render_revision_accepted}/{report.post_render_revision_attempted}, "
             f"advanced={report.advanced_boundaries_executed} boundary result(s), "
             f"J/L={report.sound_non_sync_selected}, mixAudit={report.audio_mix_audited}"
         )

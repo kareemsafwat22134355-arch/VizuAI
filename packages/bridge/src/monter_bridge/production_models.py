@@ -13,6 +13,9 @@ class ProductionReport(PortableModel):
     project_id: str
     status: ProductionStatus
     revision_iterations: int = Field(ge=0)
+    post_render_revision_attempted: bool = False
+    post_render_revision_accepted: bool = False
+    post_render_revision_count: int = Field(default=0, ge=0, le=1)
     assets_ingested: int = Field(ge=0)
     shots_analyzed: int = Field(ge=0)
     edit_segments: int = Field(ge=0)
