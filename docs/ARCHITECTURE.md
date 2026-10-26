@@ -1,4 +1,4 @@
-# MONTER architecture v0.4
+# MONTER architecture v0.5
 
 ## Local Bridge
 
@@ -14,7 +14,7 @@ Current responsibilities:
 - sample local optical flow and global camera motion from one decode pass per shot
 - derive motion-phase edit anchors
 - cache per-asset analysis using proxy + analyzer fingerprints
-- emit portable project, VIR, director, edit, CTL, critic, transition-opportunity, OTIO and production artifacts
+- emit portable project, VIR, director, edit, CTL, critic, transition-opportunity, human-correction, OTIO and production artifacts
 - compile selected feasible transition opportunities into typed deterministic CTL primitives
 - render deterministic proxy drafts with FFmpeg
 - create share bundles that exclude RAW media, proxies and analysis caches
@@ -35,9 +35,10 @@ Current responsibilities:
 - edit-plan reasoning
 - CTL transition rationale
 - transition-opportunity feasibility and blocked/accepted candidates
+- read-only human correction history
 - critic dimensions/findings
 
-Studio accepts both CTL v0.1 and v0.2 bundles. Later responsibilities include human correction capture, richer waveform regions and benchmark comparisons.
+Studio accepts both CTL v0.1 and v0.2 bundles. Later responsibilities include direct correction authoring, richer waveform regions and benchmark comparisons.
 
 ## Boundary
 
@@ -51,7 +52,8 @@ RAW media (local)
     -> deterministic transition/timewarp renderer
     -> Critic / portable .monter.zip
     -> MONTER Studio (browser-local inspection)
-    -> local RAW relink / final-quality renderer later
+    -> human correction ledger
+    -> future evaluation / policy-learning layer
 ```
 
 ## Transition opportunity stage
@@ -84,6 +86,23 @@ For bridge duration `d`, the renderer expands the outgoing source by `d/2` after
 The measured screen direction maps to one deterministic FFmpeg primitive: `slideleft`, `slideright`, `slideup`, or `slidedown`. Inputs are normalized to matching size, frame rate, timebase and pixel format before composition. The renderer checks computed duration against CTL before encoding.
 
 Non-zero transitions adjacent to a timewarp are deliberately deferred and fall back to a zero-duration motion-aware cut. `zoom_bridge` remains a scored feasibility candidate only; it is not yet a compiled renderer primitive.
+
+## Human correction evidence layer
+
+v0.14 records human overrides as supervised evidence without silently changing future policy.
+
+Each `human-corrections.json` event preserves:
+
+- correction kind and explicit target
+- original AI decision
+- human replacement decision
+- compact context/evidence snapshot
+- human reason
+- source and timestamp
+
+Ledgers are scoped to one `projectId`, use atomic writes, and reject events where the human decision is identical to the AI decision. Portable bundles can include the ledger because it contains editorial metadata rather than RAW media.
+
+This layer is intentionally separated from both `StyleProfile` and automatic planning. A later evaluator must decide whether repeated corrections represent a stable preference, a dramatic-context rule, a project-specific exception, or an analyzer/compiler failure. No correction becomes a global rule merely because it was recorded.
 
 ## Video Microscope research track
 
