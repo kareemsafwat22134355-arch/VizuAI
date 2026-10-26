@@ -16,6 +16,7 @@ from .production_models import ProductionReport
 from .proxy import create_project_proxies
 from .render import render_draft
 from .revision import revise_edit_plan
+from .transition_opportunities import synthesize_transition_opportunities
 
 
 def produce_project(
@@ -72,9 +73,12 @@ def produce_project(
         write_model(work_dir / f"critic-{iteration:02d}.json", critic)
         revision_iterations = iteration
 
+    transitions = synthesize_transition_opportunities(edit, vir)
+
     write_model(work_dir / "edit-plan.json", edit)
     write_model(work_dir / "ctl.json", ctl)
     write_model(work_dir / "critic-report.json", critic)
+    write_model(work_dir / "transition-opportunities.json", transitions)
     export_otio(project, edit, work_dir / "edit.otio")
 
     if render:
@@ -93,6 +97,7 @@ def produce_project(
         "edit-plan.json",
         "ctl.json",
         "critic-report.json",
+        "transition-opportunities.json",
         "edit.otio",
     ]
     if audio:
