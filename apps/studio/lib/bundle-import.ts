@@ -16,6 +16,7 @@ const JSON_ARTIFACTS = [
   "transition-opportunities.json",
   "advanced-analysis-plan.json",
   "advanced-analysis-results.json",
+  "transition-refinement.json",
   "human-corrections.json",
   "decision-reviews.json",
   "decision-review-summary.json",

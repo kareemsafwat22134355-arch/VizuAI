@@ -108,6 +108,7 @@ export function StudioClient() {
         <a className="navItem" href="#director">Director</a>
         <a className="navItem" href="#timeline">Timeline</a>
         <a className="navItem" href="#transitions">Transitions</a>
+        <a className="navItem" href="#refinement">Refinement</a>
         <a className="navItem" href="#compute">Compute</a>
         <a className="navItem" href="#corrections">Corrections</a>
         <a className="navItem" href="#reviews">Reviews</a>
@@ -173,6 +174,21 @@ export function StudioClient() {
               <small>motivation {candidate.motivationScore.toFixed(2)} · feasibility {candidate.feasibilityScore.toFixed(2)} · needs {candidate.requiredHandleSeconds.toFixed(2)}s handles</small>
             </div>)}</div>
           </div>)}</div> : <div className="emptyState">Load `transition-opportunities.json` to inspect candidate feasibility before any non-zero bridge is compiled.</div>}
+        </article>
+
+        <article className="card timelineCard" id="refinement">
+          <div className="sectionHeading"><div><p className="label">TRANSITION REFINEMENT</p><h2>Evidence changed the decision</h2></div><span className="pill">{bundle.transitionRefinement?.boundaries.length ?? 0} reviewed boundaries</span></div>
+          {bundle.transitionRefinement ? <div className="timeline">{bundle.transitionRefinement.boundaries.map((item) => <div className="timelineClip" key={item.boundaryIndex}>
+            <div className="clipTop"><strong>Boundary {item.boundaryIndex}</strong><span>{metricLabel(item.status)}</span></div>
+            <div className="transitionReason">{metricLabel(item.baseMechanism)} → {metricLabel(item.refinedMechanism)}</div>
+            <p>{item.reason}</p>
+            <div className="clipSignals">
+              {item.flowDirectionCompatibility != null && <span>flow direction match {item.flowDirectionCompatibility.toFixed(2)}</span>}
+              {item.leftDirectionalCoherence != null && <span>left coherence {item.leftDirectionalCoherence.toFixed(2)}</span>}
+              {item.rightDirectionalCoherence != null && <span>right coherence {item.rightDirectionalCoherence.toFixed(2)}</span>}
+            </div>
+            {Object.keys(item.evidence).length > 0 && <small>evidence · {formatDecision(item.evidence)}</small>}
+          </div>)}</div> : <div className="emptyState">Load `transition-refinement.json` after executing selective analysis. Missing advanced evidence never silently changes the base transition.</div>}
         </article>
 
         <article className="card timelineCard" id="compute">

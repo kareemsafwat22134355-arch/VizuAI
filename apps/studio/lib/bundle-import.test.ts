@@ -127,6 +127,27 @@ function advancedResultsJson(projectId = "project_test") {
   });
 }
 
+function refinementJson(projectId = "project_test") {
+  return JSON.stringify({
+    schemaVersion: "transition-refinement-0.1",
+    projectId,
+    boundaries: [
+      {
+        boundaryIndex: 1,
+        baseMechanism: "directional_bridge",
+        refinedMechanism: "hard_cut",
+        status: "demoted",
+        reason: "selective dense flow contradicts the coarse directional match",
+        flowDirectionCompatibility: 0.12,
+        leftDirectionalCoherence: 0.74,
+        rightDirectionalCoherence: 0.71,
+        evidence: { baseRelationScore: 0.75, flowDirectionCompatibility: 0.12 },
+      },
+    ],
+    notes: [],
+  });
+}
+
 function correctionsJson() {
   return JSON.stringify({
     schemaVersion: "human-corrections-0.1",
@@ -266,6 +287,21 @@ describe("importMonterBundle", () => {
     expect(boundary?.features.find((feature) => feature.feature === "depth")?.status).toBe("backend_unavailable");
   });
 
+  it("loads transition refinement changes from executed flow evidence", async () => {
+    const file = bundleFile({
+      "bundle-manifest.json": strToU8(manifest({ includedArtifacts: ["project.monter.json", "transition-refinement.json"] })),
+      "project.monter.json": strToU8(projectJson()),
+      "transition-refinement.json": strToU8(refinementJson()),
+    });
+
+    const result = await importMonterBundle(file);
+    const refinement = result.artifacts.transitionRefinement?.boundaries[0];
+    expect(refinement?.status).toBe("demoted");
+    expect(refinement?.baseMechanism).toBe("directional_bridge");
+    expect(refinement?.refinedMechanism).toBe("hard_cut");
+    expect(refinement?.flowDirectionCompatibility).toBe(0.12);
+  });
+
   it("loads human correction decisions from the bundle", async () => {
     const file = bundleFile({
       "bundle-manifest.json": strToU8(manifest({ includedArtifacts: ["project.monter.json", "human-corrections.json"] })),
@@ -322,6 +358,15 @@ describe("importMonterBundle", () => {
       "bundle-manifest.json": strToU8(manifest()),
       "project.monter.json": strToU8(projectJson()),
       "advanced-analysis-results.json": strToU8(advancedResultsJson("another_project")),
+    });
+    await expect(importMonterBundle(file)).rejects.toThrow(/projectId does not match/i);
+  });
+
+  it("rejects transition refinement from another project", async () => {
+    const file = bundleFile({
+      "bundle-manifest.json": strToU8(manifest()),
+      "project.monter.json": strToU8(projectJson()),
+      "transition-refinement.json": strToU8(refinementJson("another_project")),
     });
     await expect(importMonterBundle(file)).rejects.toThrow(/projectId does not match/i);
   });
