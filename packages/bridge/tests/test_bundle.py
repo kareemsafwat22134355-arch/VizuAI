@@ -39,6 +39,17 @@ def test_share_bundle_excludes_proxies_and_raw(tmp_path: Path):
         encoding="utf-8",
     )
     (work_dir / "vir.monter.json").write_text("{}", encoding="utf-8")
+    (work_dir / "advanced-analysis-results.json").write_text(
+        json.dumps(
+            {
+                "schemaVersion": "advanced-analysis-results-0.1",
+                "projectId": "p1",
+                "boundaries": [],
+                "notes": [],
+            }
+        ),
+        encoding="utf-8",
+    )
     (work_dir / "human-corrections.json").write_text(
         json.dumps(
             {
@@ -100,6 +111,7 @@ def test_share_bundle_excludes_proxies_and_raw(tmp_path: Path):
         assert "bundle-manifest.json" in names
         assert "project.monter.json" in names
         assert "vir.monter.json" in names
+        assert "advanced-analysis-results.json" in names
         assert "human-corrections.json" in names
         assert "decision-reviews.json" in names
         assert "decision-review-summary.json" in names
@@ -109,6 +121,7 @@ def test_share_bundle_excludes_proxies_and_raw(tmp_path: Path):
         manifest = json.loads(archive.read("bundle-manifest.json"))
         assert manifest["rawMediaIncluded"] is False
         assert manifest["proxiesIncluded"] is False
+        assert "advanced-analysis-results.json" in manifest["includedArtifacts"]
         assert "human-corrections.json" in manifest["includedArtifacts"]
         assert "decision-reviews.json" in manifest["includedArtifacts"]
         assert "decision-review-summary.json" in manifest["includedArtifacts"]
