@@ -3,6 +3,7 @@ import pytest
 from monter_bridge.analysis_models import EditAnchor, GlobalMotionSummary, ShotAnalysis, TimeRange, VirProject
 from monter_bridge.critic import critique_edit
 from monter_bridge.critic_models import CriticFinding, CriticReport
+from monter_bridge.ctl import compile_ctl
 from monter_bridge.ctl_models import CtlClip, CtlProgram, CtlTransition, TimeWarpIntent, TimeWarpSlice
 from monter_bridge.cut_signature import build_cut_signature
 from monter_bridge.motion_match_realign import apply_motion_match_realign, propose_motion_match_realign
@@ -182,9 +183,24 @@ def test_revision_applies_boundary_realign_and_records_machine_readable_shifts()
     assert after.phase_compatibility == pytest.approx(1.0)
 
 
+def test_realign_revision_recompiles_without_the_recoverable_timing_finding():
+    edit, vir, _, _ = fixture_edit_and_vir()
+    baseline = critique_edit(edit, fixture_ctl(edit, "motion_match_cut"), vir)
+    revised, revision = revise_edit_plan(edit, vir, baseline)
+
+    assert any(action.kind == "realign_boundary" for action in revision.actions)
+    revised_ctl = compile_ctl(revised, vir, fps=24, width=960)
+    revised_critic = critique_edit(revised, revised_ctl, vir)
+
+    assert not any(item.code == "motion_match_timing_weak" for item in revised_critic.findings)
+    timing_metric = next(item for item in revised_critic.metrics if item.name == "recoverable_motion_match_timing_count")
+    assert timing_metric.value == 0
+    assert timing_metric.passed is True
+    assert revised_critic.status == "pass"
+
+
 def test_realign_is_skipped_when_adjacent_segment_is_replaced_in_same_pass():
     edit, vir, _, _ = fixture_edit_and_vir()
-    # Add a third replacement candidate so the requested segment can actually be changed.
     vir.shots.append(ShotAnalysis(
         id="replacement",
         asset_id="replacement_asset",
