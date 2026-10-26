@@ -28,6 +28,13 @@ MONTER should reuse mature open-source infrastructure when it accelerates develo
 - Adopted version: 8.0.3.
 - Why: waveform rendering is commodity UI infrastructure and can operate against browser-local object URLs without uploading source audio.
 
+### fflate
+- Role: browser-local `.monter.zip` inspection and selective decompression.
+- License: MIT.
+- Adopted version: 0.8.3.
+- Why: small pure-JavaScript ZIP implementation with browser support and per-entry filtering. Studio only decompresses MONTER's known artifact names and enforces compressed, per-entry and total expanded-size limits before accepting project data.
+- MONTER ownership: bundle schema, artifact validation, privacy rules and project semantics remain ours.
+
 ## Re-evaluate later
 
 ### Media Chrome

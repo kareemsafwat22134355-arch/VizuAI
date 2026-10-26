@@ -3,6 +3,7 @@
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
 import type { ArtifactBundle } from "@/lib/artifacts";
 import { mergeArtifacts } from "@/lib/artifacts";
+import { importMonterBundle } from "@/lib/bundle-import";
 import { Waveform } from "./Waveform";
 
 function formatBytes(bytes?: number) {
@@ -21,6 +22,7 @@ export function StudioClient() {
   const [errors, setErrors] = useState<string[]>([]);
   const [videoUrl, setVideoUrl] = useState<string>();
   const [audioUrl, setAudioUrl] = useState<string>();
+  const [sourceLabel, setSourceLabel] = useState("loose artifacts");
 
   useEffect(() => () => {
     if (videoUrl) URL.revokeObjectURL(videoUrl);
@@ -30,6 +32,16 @@ export function StudioClient() {
   const assetById = useMemo(() => new Map(bundle.project?.assets.map((asset) => [asset.id, asset]) ?? []), [bundle.project]);
   const loadedCount = Object.values(bundle).filter(Boolean).length;
 
+  function replaceVideo(blob?: Blob) {
+    if (videoUrl) URL.revokeObjectURL(videoUrl);
+    setVideoUrl(blob ? URL.createObjectURL(blob) : undefined);
+  }
+
+  function replaceAudio(blob?: Blob) {
+    if (audioUrl) URL.revokeObjectURL(audioUrl);
+    setAudioUrl(blob ? URL.createObjectURL(blob) : undefined);
+  }
+
   async function handleFiles(event: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files ?? []);
     let next = bundle;
@@ -37,18 +49,24 @@ export function StudioClient() {
 
     for (const file of files) {
       try {
+        if (file.name.endsWith(".monter.zip") || file.name.endsWith(".zip")) {
+          const imported = await importMonterBundle(file);
+          next = imported.artifacts;
+          replaceVideo(imported.preview);
+          setSourceLabel(`${file.name} · local bundle`);
+          continue;
+        }
         if (file.type.startsWith("video/")) {
-          if (videoUrl) URL.revokeObjectURL(videoUrl);
-          setVideoUrl(URL.createObjectURL(file));
+          replaceVideo(file);
           continue;
         }
         if (file.type.startsWith("audio/")) {
-          if (audioUrl) URL.revokeObjectURL(audioUrl);
-          setAudioUrl(URL.createObjectURL(file));
+          replaceAudio(file);
           continue;
         }
         if (!file.name.endsWith(".json")) continue;
         next = mergeArtifacts(next, file.name, JSON.parse(await file.text()));
+        setSourceLabel("loose local artifacts");
       } catch (error) {
         nextErrors.push(error instanceof Error ? error.message : `${file.name}: failed to load`);
       }
@@ -72,13 +90,13 @@ export function StudioClient() {
         <a className="navItem" href="#timeline">Timeline</a>
         <a className="navItem" href="#critic">Critic</a>
       </nav>
-      <div className="sidebarFooter"><span className="tinyLabel">PRIVACY</span><strong>Local files stay local</strong><p>JSON, video and audio are read through browser File APIs; this Studio does not upload them.</p></div>
+      <div className="sidebarFooter"><span className="tinyLabel">PRIVACY</span><strong>Local files stay local</strong><p>`.monter.zip`, JSON, video and audio are decoded through browser File APIs. Studio does not upload the project to a server.</p></div>
     </aside>
 
     <main className="main" id="project">
       <header className="topbar">
-        <div><p className="eyebrow">LOCAL ARTIFACT INSPECTOR</p><h1>{projectName}</h1><p className="subtitle">Load `.monter` JSON artifacts plus an optional rough-cut and music file.</p></div>
-        <label className="importButton">Load artifacts<input type="file" multiple accept="application/json,video/*,audio/*" onChange={handleFiles} /></label>
+        <div><p className="eyebrow">LOCAL PROJECT INSPECTOR</p><h1>{projectName}</h1><p className="subtitle">Open one `.monter.zip` from the Local Bridge, or load loose artifacts manually.</p></div>
+        <label className="importButton">Load project<input type="file" multiple accept=".zip,.json,application/zip,application/json,video/*,audio/*" onChange={handleFiles} /></label>
       </header>
 
       {errors.length > 0 && <div className="errorBox">{errors.map((error) => <div key={error}>{error}</div>)}</div>}
@@ -87,13 +105,13 @@ export function StudioClient() {
         <article className="card statCard"><p className="label">RAW FOOTAGE</p><strong className="statValue">{formatBytes(bundle.project?.sourceBytes)}</strong><span className="statNote">never uploaded</span></article>
         <article className="card statCard"><p className="label">PROXIES</p><strong className="statValue">{formatBytes(bundle.project?.proxyBytes)}</strong><span className="statNote">local bridge</span></article>
         <article className="card statCard"><p className="label">SHOTS</p><strong className="statValue">{bundle.vir?.shots.length ?? "—"}</strong><span className="statNote">VIR analysis</span></article>
-        <article className="card statCard"><p className="label">CUT</p><strong className="statValue">{duration != null ? `${duration.toFixed(2)}s` : "—"}</strong><span className="statNote">{loadedCount} artifact types loaded</span></article>
+        <article className="card statCard"><p className="label">CUT</p><strong className="statValue">{duration != null ? `${duration.toFixed(2)}s` : "—"}</strong><span className="statNote">{loadedCount} types · {sourceLabel}</span></article>
       </section>
 
       <section className="contentGrid">
         <article className="card previewCard" id="preview">
           <div className="sectionHeading"><div><p className="label">LOCAL PREVIEW</p><h2>Rough cut</h2></div><span className="pill">no upload</span></div>
-          {videoUrl ? <video className="previewVideo" src={videoUrl} controls preload="metadata" /> : <div className="emptyState">Add `rough-cut.mp4` with the Load artifacts button.</div>}
+          {videoUrl ? <video className="previewVideo" src={videoUrl} controls preload="metadata" /> : <div className="emptyState">Load a bundle containing `rough-cut.mp4`, or add the preview manually.</div>}
           {audioUrl && <div className="audioInspect"><p className="label">MUSIC WAVEFORM</p><Waveform url={audioUrl} /></div>}
         </article>
 
