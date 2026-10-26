@@ -1,15 +1,9 @@
 from __future__ import annotations
 
-from .analysis_models import ShotAnalysis, VirProject
+from .analysis_models import VirProject
 from .ctl_models import CtlClip, CtlProgram, CtlTransition
+from .cut_signature import build_cut_signature
 from .planning_models import EditPlan
-
-
-def _near_motion_peak(shot: ShotAnalysis, time_seconds: float, tolerance: float = 0.35) -> bool:
-    return any(
-        anchor.type == "motion_peak" and abs(anchor.time_seconds - time_seconds) <= tolerance
-        for anchor in shot.edit_anchors
-    )
 
 
 def compile_ctl(edit_plan: EditPlan, vir: VirProject, fps: int = 24, width: int = 960) -> CtlProgram:
@@ -31,22 +25,49 @@ def compile_ctl(edit_plan: EditPlan, vir: VirProject, fps: int = 24, width: int 
     for boundary_index, (left, right) in enumerate(zip(edit_plan.segments, edit_plan.segments[1:]), start=1):
         left_shot = shots.get(left.shot_id)
         right_shot = shots.get(right.shot_id)
-        motivated = bool(
-            (left_shot and _near_motion_peak(left_shot, left.source_out_seconds))
-            or (right_shot and _near_motion_peak(right_shot, right.source_in_seconds))
-        )
-        transitions.append(
-            CtlTransition(
+        if left_shot is None or right_shot is None:
+            transitions.append(CtlTransition(
                 boundary_index=boundary_index,
-                mechanism="motion_peak_cut" if motivated else "hard_cut",
-                duration_seconds=0.0,
-                reason=(
-                    "Cut boundary is adjacent to a measured motion apex."
-                    if motivated
-                    else "No stronger physical transition cue is available; preserve a deliberate hard cut."
-                ),
+                mechanism="hard_cut",
+                reason="Shot analysis is unavailable at this boundary; preserve a deterministic hard cut.",
+            ))
+            continue
+
+        signature = build_cut_signature(left, right, left_shot, right_shot)
+        evidence: dict[str, float | str | bool] = {
+            "directionCompatibility": signature.direction_compatibility,
+            "zoomCompatibility": signature.zoom_compatibility,
+            "phaseCompatibility": signature.phase_compatibility,
+            "globalMotionConfidence": signature.global_motion_confidence,
+            "leftDirection": left_shot.global_motion.dominant_screen_direction,
+            "rightDirection": right_shot.global_motion.dominant_screen_direction,
+        }
+
+        if (
+            signature.direction_compatibility >= 0.9
+            and signature.global_motion_confidence >= 0.35
+            and signature.relation_score >= 0.55
+        ):
+            mechanism = "motion_match_cut"
+            reason = (
+                "Outgoing and incoming shots share a confident global screen-motion direction; "
+                "use that physical continuity rather than adding a decorative transition."
             )
-        )
+        elif signature.phase_compatibility >= 0.6:
+            mechanism = "motion_peak_cut"
+            reason = "The boundary is aligned to a measured action phase even without a confident global direction match."
+        else:
+            mechanism = "hard_cut"
+            reason = "Physical continuity evidence is weak; preserve a deliberate hard cut instead of inventing an effect."
+
+        transitions.append(CtlTransition(
+            boundary_index=boundary_index,
+            mechanism=mechanism,
+            duration_seconds=0.0,
+            relation_score=signature.relation_score,
+            evidence=evidence,
+            reason=reason,
+        ))
 
     return CtlProgram(
         project_id=edit_plan.project_id,
