@@ -72,11 +72,19 @@ export type DirectorPlan = {
 };
 
 export type CtlProgram = {
-  schemaVersion: "ctl-0.1";
+  schemaVersion: "ctl-0.1" | "ctl-0.2";
   projectId: string;
   durationSeconds: number;
   clips: Array<{ id: string; assetId: string; shotId: string }>;
-  transitions: Array<{ boundaryIndex: number; mechanism: string; durationSeconds: number; reason: string }>;
+  transitions: Array<{
+    boundaryIndex: number;
+    mechanism: string;
+    durationSeconds: number;
+    relationScore?: number | null;
+    evidence?: Record<string, string | number | boolean>;
+    parameters?: Record<string, string | number | boolean>;
+    reason: string;
+  }>;
   renderFps: number;
   renderWidth: number;
 };
@@ -151,6 +159,7 @@ export type ArtifactBundle = {
 type JsonObject = Record<string, unknown>;
 const isObject = (value: unknown): value is JsonObject => typeof value === "object" && value !== null && !Array.isArray(value);
 const isNumber = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
+const isCtlVersion = (value: unknown): value is CtlProgram["schemaVersion"] => value === "ctl-0.1" || value === "ctl-0.2";
 
 export function parseArtifact(filename: string, value: unknown): Partial<ArtifactBundle> {
   if (!isObject(value)) throw new Error(`${filename}: expected a JSON object`);
@@ -171,8 +180,8 @@ export function parseArtifact(filename: string, value: unknown): Partial<Artifac
     if (!Array.isArray(value.segments) || !isNumber(value.actualDurationSeconds)) throw new Error(`${filename}: invalid edit plan`);
     return { edit: value as EditPlan };
   }
-  if (filename.endsWith("ctl.json") || value.schemaVersion === "ctl-0.1") {
-    if (value.schemaVersion !== "ctl-0.1" || !Array.isArray(value.transitions)) throw new Error(`${filename}: invalid CTL`);
+  if (filename.endsWith("ctl.json") || isCtlVersion(value.schemaVersion)) {
+    if (!isCtlVersion(value.schemaVersion) || !Array.isArray(value.transitions)) throw new Error(`${filename}: invalid CTL`);
     return { ctl: value as CtlProgram };
   }
   if (filename.endsWith("transition-opportunities.json")) {
