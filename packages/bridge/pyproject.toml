@@ -1,7 +1,7 @@
 [project]
 name = "monter-bridge"
-version = "0.3.0"
-description = "8GB-RAM-first local ingest, media intelligence, and editorial planning bridge for MONTER"
+version = "0.4.0"
+description = "8GB-RAM-first local cinematic intelligence bridge for MONTER"
 requires-python = ">=3.11"
 dependencies = [
   "pydantic>=2.9,<3",
@@ -10,7 +10,8 @@ dependencies = [
   "opencv-python-headless>=4.10,<5",
   "scenedetect-headless>=0.7.2,<0.8",
   "librosa>=1.0,<2",
-  "soundfile>=0.13,<1"
+  "soundfile>=0.13,<1",
+  "opentimelineio>=0.18,<0.19"
 ]
 
 [project.optional-dependencies]
