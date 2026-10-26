@@ -3,6 +3,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from .audio_edit_models import AudioEditPlan, SourceAudioEvent
 from .ctl_models import CtlProgram, CtlTransition, TimeWarpIntent
 from .models import MonterProject
 from .proxy import proxy_path_for
@@ -129,12 +130,94 @@ def _compose_video_filters(
     return filters
 
 
+def _source_audio_filter(input_index: int, event_index: int, event: SourceAudioEvent) -> tuple[str, str]:
+    duration = event.timeline_out_seconds - event.timeline_in_seconds
+    label = f"asrc{event_index}"
+    parts = [
+        f"[{input_index}:a]atrim=start={event.source_in_seconds:.6f}:end={event.source_out_seconds:.6f}",
+        "asetpts=PTS-STARTPTS",
+        "aresample=48000",
+        "aformat=sample_fmts=fltp:channel_layouts=stereo",
+        f"volume={event.gain_db:.3f}dB",
+    ]
+    if event.fade_in_seconds > 1e-9:
+        parts.append(f"afade=t=in:st=0:d={event.fade_in_seconds:.6f}")
+    if event.fade_out_seconds > 1e-9:
+        fade_out_start = max(0.0, duration - event.fade_out_seconds)
+        parts.append(f"afade=t=out:st={fade_out_start:.6f}:d={event.fade_out_seconds:.6f}")
+    delay_ms = max(0, round(event.timeline_in_seconds * 1000))
+    if delay_ms > 0:
+        parts.append(f"adelay={delay_ms}:all=1")
+    return ",".join(parts) + f"[{label}]", label
+
+
+def _audio_filters(
+    ctl: CtlProgram,
+    project: MonterProject,
+    audio_plan: AudioEditPlan | None,
+    music_index: int | None,
+) -> tuple[list[str], bool]:
+    if audio_plan is not None:
+        if audio_plan.project_id != ctl.project_id:
+            raise ValueError("Audio edit plan projectId does not match CTL")
+        if abs(audio_plan.duration_seconds - ctl.duration_seconds) > 1e-3:
+            raise ValueError("Audio edit plan duration does not match CTL")
+
+    assets = {asset.id: asset for asset in project.assets}
+    clip_input_by_segment = {clip.id: index for index, clip in enumerate(ctl.clips)}
+    warped_segments = {warp.segment_id for warp in ctl.time_warps}
+    filters: list[str] = []
+    mix_labels: list[str] = []
+
+    if audio_plan is not None:
+        for event_index, event in enumerate(audio_plan.events):
+            input_index = clip_input_by_segment.get(event.segment_id)
+            if input_index is None:
+                raise ValueError(f"Audio event references unknown CTL segment: {event.segment_id}")
+            clip = ctl.clips[input_index]
+            if event.asset_id != clip.asset_id:
+                raise ValueError(f"Audio event {event.id} asset does not match CTL segment asset")
+            asset = assets.get(event.asset_id)
+            if asset is None or not asset.has_audio:
+                raise ValueError(f"Audio event {event.id} references an asset without source audio")
+            if event.segment_id in warped_segments:
+                raise ValueError(f"Audio event {event.id} targets a timewarped segment without audio-retime semantics")
+            if event.source_out_seconds > asset.duration_seconds + 1e-6:
+                raise ValueError(f"Audio event {event.id} extends beyond source duration")
+            filter_text, label = _source_audio_filter(input_index, event_index, event)
+            filters.append(filter_text)
+            mix_labels.append(f"[{label}]")
+
+    if music_index is not None:
+        music_gain_db = audio_plan.music_gain_db if audio_plan is not None else -2.5
+        filters.append(
+            f"[{music_index}:a]atrim=duration={ctl.duration_seconds:.6f},asetpts=PTS-STARTPTS,"
+            f"aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,"
+            f"volume={music_gain_db:.3f}dB,"
+            f"afade=t=out:st={max(0.0, ctl.duration_seconds - 0.6):.6f}:d=0.600000[musicbed]"
+        )
+        mix_labels.append("[musicbed]")
+
+    if not mix_labels:
+        return filters, False
+    if len(mix_labels) == 1:
+        filters.append(f"{mix_labels[0]}atrim=duration={ctl.duration_seconds:.6f}[aout]")
+    else:
+        filters.append(
+            "".join(mix_labels)
+            + f"amix=inputs={len(mix_labels)}:duration=longest:dropout_transition=0:normalize=0,"
+            f"atrim=duration={ctl.duration_seconds:.6f}[aout]"
+        )
+    return filters, True
+
+
 def render_command(
     ctl: CtlProgram,
     project: MonterProject,
     proxy_dir: Path,
     output: Path,
     music: Path | None = None,
+    audio_plan: AudioEditPlan | None = None,
 ) -> list[str]:
     if not ctl.clips:
         raise ValueError("CTL contains no clips")
@@ -173,14 +256,12 @@ def render_command(
         clip_durations.append(_clip_render_duration(clip, extend_before[index], extend_after[index]))
 
     filters.extend(_compose_video_filters(ctl, clip_durations))
+    audio_filters, has_audio_output = _audio_filters(ctl, project, audio_plan, music_index)
+    filters.extend(audio_filters)
 
     command.extend(["-filter_complex", ";".join(filters), "-map", "[vout]"])
-    if music_index is not None:
-        command.extend([
-            "-map", f"{music_index}:a:0",
-            "-c:a", "aac", "-b:a", "160k",
-            "-af", f"volume=0.75,afade=t=out:st={max(0.0, ctl.duration_seconds - 0.6):.3f}:d=0.6",
-        ])
+    if has_audio_output:
+        command.extend(["-map", "[aout]", "-c:a", "aac", "-b:a", "160k"])
     else:
         command.append("-an")
 
@@ -199,6 +280,7 @@ def render_draft(
     proxy_dir: Path,
     output: Path,
     music: Path | None = None,
+    audio_plan: AudioEditPlan | None = None,
 ) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
-    subprocess.run(render_command(ctl, project, proxy_dir, output, music), check=True)
+    subprocess.run(render_command(ctl, project, proxy_dir, output, music, audio_plan), check=True)
