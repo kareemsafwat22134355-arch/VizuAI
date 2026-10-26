@@ -4,7 +4,12 @@ from collections import Counter
 
 from .analysis_models import ShotAnalysis, VirProject
 from .director import energy_at, role_at
+from .microscope_models import StyleProfile
 from .planning_models import AudioAnalysis, DirectorPlan, EditPlan, EditSegment
+
+
+MIN_SEGMENTS = 4
+MAX_SEGMENTS = 12
 
 
 def normalized_shot_energies(shots: list[ShotAnalysis]) -> dict[str, float]:
@@ -18,6 +23,28 @@ def normalized_shot_energies(shots: list[ShotAnalysis]) -> dict[str, float]:
     if high - low < 1e-9:
         return {shot_id: 0.5 for shot_id in raw}
     return {shot_id: (value - low) / (high - low) for shot_id, value in raw.items()}
+
+
+def style_guided_segment_count(
+    duration: float,
+    default_count: int,
+    style_profile: StyleProfile | None = None,
+) -> int:
+    """Blend the baseline cutting density toward an observed style prior.
+
+    The style profile is intentionally a soft prior. A low-confidence profile barely
+    changes the baseline; a high-confidence profile can move the cadence toward the
+    observed median shot duration, but never outside the bounded CINEMA-0 range.
+    """
+    baseline = max(MIN_SEGMENTS, min(MAX_SEGMENTS, default_count))
+    if style_profile is None or style_profile.median_shot_duration_seconds <= 0:
+        return baseline
+
+    preferred = round(duration / style_profile.median_shot_duration_seconds)
+    preferred = max(MIN_SEGMENTS, min(MAX_SEGMENTS, preferred))
+    confidence = max(0.0, min(1.0, style_profile.confidence))
+    blended = round(baseline * (1.0 - confidence) + preferred * confidence)
+    return max(MIN_SEGMENTS, min(MAX_SEGMENTS, blended))
 
 
 def snapped_boundaries(
@@ -60,13 +87,15 @@ def build_edit_plan(
     vir: VirProject,
     director: DirectorPlan,
     audio: AudioAnalysis | None = None,
+    style_profile: StyleProfile | None = None,
 ) -> EditPlan:
     if not vir.shots:
         raise ValueError("VIR contains no analyzable shots")
 
     target = director.target_duration_seconds
-    initial_count = min(8, max(4, len(vir.shots)))
-    boundaries = snapped_boundaries(target, initial_count, audio.beats_seconds if audio else None)
+    baseline_count = min(8, max(4, len(vir.shots)))
+    segment_count = style_guided_segment_count(target, baseline_count, style_profile)
+    boundaries = snapped_boundaries(target, segment_count, audio.beats_seconds if audio else None)
     energies = normalized_shot_energies(vir.shots)
     uses: Counter[str] = Counter()
     previous_shot_id: str | None = None
@@ -126,14 +155,22 @@ def build_edit_plan(
         segment.timeline_out_seconds = cursor + duration
         cursor += duration
 
+    strategy_notes = [
+        "Energy fit is normalized within this project rather than against a universal motion scale.",
+        "Music beats only snap nearby boundaries; the planner intentionally avoids cut-on-every-beat behavior.",
+        "This pass uses hard-cut structure. Event-driven retiming and CTL transitions are compiled in later passes.",
+    ]
+    if style_profile is not None:
+        strategy_notes.append(
+            f"Style prior '{style_profile.profile_name}' influenced cutting density softly: "
+            f"baseline {baseline_count} segments -> {segment_count}, profile confidence {style_profile.confidence:.2f}, "
+            f"observed median shot {style_profile.median_shot_duration_seconds:.2f}s. Dramatic energy intent remains unchanged."
+        )
+
     return EditPlan(
         project_id=vir.project_id,
         target_duration_seconds=target,
         actual_duration_seconds=cursor,
         segments=segments,
-        strategy_notes=[
-            "Energy fit is normalized within this project rather than against a universal motion scale.",
-            "Music beats only snap nearby boundaries; the planner intentionally avoids cut-on-every-beat behavior.",
-            "This pass uses hard-cut structure. Event-driven retiming and CTL transitions are compiled in later passes.",
-        ],
+        strategy_notes=strategy_notes,
     )
