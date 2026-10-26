@@ -84,6 +84,49 @@ function advancedAnalysisJson(projectId = "project_test") {
   });
 }
 
+function advancedResultsJson(projectId = "project_test") {
+  return JSON.stringify({
+    schemaVersion: "advanced-analysis-results-0.1",
+    projectId,
+    boundaries: [
+      {
+        boundaryIndex: 1,
+        priority: 0.82,
+        leftFlow: {
+          segmentId: "left", assetId: "a", shotId: "sa",
+          sourceStartSeconds: 1.6, sourceEndSeconds: 2.1,
+          sampleCount: 5, meanMagnitude: 1.4, p90Magnitude: 2.2,
+          meanDx: 0.8, meanDy: 0.1, directionalCoherence: 0.72,
+        },
+        rightFlow: {
+          segmentId: "right", assetId: "b", shotId: "sb",
+          sourceStartSeconds: 0.8, sourceEndSeconds: 1.3,
+          sampleCount: 5, meanMagnitude: 1.1, p90Magnitude: 1.9,
+          meanDx: 0.7, meanDy: 0.08, directionalCoherence: 0.75,
+        },
+        flowDirectionCompatibility: 0.98,
+        features: [
+          {
+            feature: "dense_flow",
+            status: "completed",
+            backend: "opencv-farneback",
+            reason: "executed selectively",
+            metrics: { leftSampleCount: 5, rightSampleCount: 5, directionCompatibility: 0.98 },
+          },
+          {
+            feature: "depth",
+            status: "backend_unavailable",
+            backend: "unconfigured",
+            reason: "no heavyweight backend configured",
+            metrics: {},
+          },
+        ],
+      },
+    ],
+    notes: [],
+  });
+}
+
 function correctionsJson() {
   return JSON.stringify({
     schemaVersion: "human-corrections-0.1",
@@ -209,6 +252,20 @@ describe("importMonterBundle", () => {
     expect(result.artifacts.advancedAnalysis?.requests[0].priority).toBe(0.82);
   });
 
+  it("loads advanced-analysis execution results without pretending unavailable depth completed", async () => {
+    const file = bundleFile({
+      "bundle-manifest.json": strToU8(manifest({ includedArtifacts: ["project.monter.json", "advanced-analysis-results.json"] })),
+      "project.monter.json": strToU8(projectJson()),
+      "advanced-analysis-results.json": strToU8(advancedResultsJson()),
+    });
+
+    const result = await importMonterBundle(file);
+    const boundary = result.artifacts.advancedResults?.boundaries[0];
+    expect(boundary?.flowDirectionCompatibility).toBe(0.98);
+    expect(boundary?.features.find((feature) => feature.feature === "dense_flow")?.status).toBe("completed");
+    expect(boundary?.features.find((feature) => feature.feature === "depth")?.status).toBe("backend_unavailable");
+  });
+
   it("loads human correction decisions from the bundle", async () => {
     const file = bundleFile({
       "bundle-manifest.json": strToU8(manifest({ includedArtifacts: ["project.monter.json", "human-corrections.json"] })),
@@ -256,6 +313,15 @@ describe("importMonterBundle", () => {
       "bundle-manifest.json": strToU8(manifest()),
       "project.monter.json": strToU8(projectJson()),
       "advanced-analysis-plan.json": strToU8(advancedAnalysisJson("another_project")),
+    });
+    await expect(importMonterBundle(file)).rejects.toThrow(/projectId does not match/i);
+  });
+
+  it("rejects advanced-analysis results from another project", async () => {
+    const file = bundleFile({
+      "bundle-manifest.json": strToU8(manifest()),
+      "project.monter.json": strToU8(projectJson()),
+      "advanced-analysis-results.json": strToU8(advancedResultsJson("another_project")),
     });
     await expect(importMonterBundle(file)).rejects.toThrow(/projectId does not match/i);
   });
