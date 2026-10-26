@@ -5,16 +5,19 @@ from pathlib import Path
 
 from .analysis import analyze_project
 from .audio import analyze_audio
+from .ctl import compile_ctl
 from .director import default_director_plan
 from .ingest import ingest_project
-from .manifest_io import load_project, load_vir, write_model
+from .manifest_io import load_ctl, load_edit_plan, load_project, load_vir, write_model
+from .otio_export import export_otio
 from .planner import build_edit_plan
 from .proxy import create_project_proxies
+from .render import render_draft
 
 
 def add_shared_media_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--width", type=int, default=960, help="analysis proxy max width")
-    parser.add_argument("--fps", type=int, default=24, help="analysis proxy frame rate")
+    parser.add_argument("--width", type=int, default=960, help="analysis/render proxy max width")
+    parser.add_argument("--fps", type=int, default=24, help="analysis/render frame rate")
 
 
 def add_plan_args(parser: argparse.ArgumentParser) -> None:
@@ -22,7 +25,7 @@ def add_plan_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--music", default=None, help="optional music track for beat/onset analysis")
 
 
-def write_planning_outputs(vir_path: Path, out_dir: Path, duration: float, music: str | None) -> None:
+def write_planning_outputs(vir_path: Path, out_dir: Path, duration: float, music: str | None):
     vir = load_vir(vir_path)
     director = default_director_plan(duration)
     audio = analyze_audio(Path(music)) if music else None
@@ -38,6 +41,7 @@ def write_planning_outputs(vir_path: Path, out_dir: Path, duration: float, music
         f"Edit plan ready: {len(edit_plan.segments)} segments, "
         f"{edit_plan.actual_duration_seconds:.2f}s actual / {duration:.2f}s target"
     )
+    return edit_plan
 
 
 def main() -> None:
@@ -65,7 +69,25 @@ def main() -> None:
     plan.add_argument("--out-dir", default=".monter")
     add_plan_args(plan)
 
-    prepare = sub.add_parser("prepare", help="ingest RAW, create proxies, analyze, and plan a rough edit")
+    compile_parser = sub.add_parser("compile", help="compile an edit plan into validated CTL")
+    compile_parser.add_argument("--edit-plan", default=".monter/edit-plan.json")
+    compile_parser.add_argument("--vir", default=".monter/vir.monter.json")
+    compile_parser.add_argument("--out", default=".monter/ctl.json")
+    add_shared_media_args(compile_parser)
+
+    render_parser = sub.add_parser("render", help="render a deterministic proxy draft from CTL")
+    render_parser.add_argument("--manifest", default=".monter/project.monter.json")
+    render_parser.add_argument("--ctl", default=".monter/ctl.json")
+    render_parser.add_argument("--proxy-dir", default=".monter/proxies")
+    render_parser.add_argument("--music", default=None)
+    render_parser.add_argument("--out", default=".monter/rough-cut.mp4")
+
+    otio_parser = sub.add_parser("export-otio", help="export the edit plan as OpenTimelineIO")
+    otio_parser.add_argument("--manifest", default=".monter/project.monter.json")
+    otio_parser.add_argument("--edit-plan", default=".monter/edit-plan.json")
+    otio_parser.add_argument("--out", default=".monter/edit.otio")
+
+    prepare = sub.add_parser("prepare", help="ingest RAW, create proxies, analyze, plan, and compile CTL")
     prepare.add_argument("folder")
     prepare.add_argument("--name", default="MONTER Project")
     prepare.add_argument("--work-dir", default=".monter")
@@ -104,6 +126,28 @@ def main() -> None:
         write_planning_outputs(Path(args.vir), Path(args.out_dir), args.duration, args.music)
         return
 
+    if args.command == "compile":
+        edit_plan = load_edit_plan(Path(args.edit_plan))
+        vir = load_vir(Path(args.vir))
+        ctl = compile_ctl(edit_plan, vir, fps=args.fps, width=args.width)
+        write_model(Path(args.out), ctl)
+        print(f"CTL ready: {len(ctl.clips)} clips, {len(ctl.transitions)} boundaries -> {args.out}")
+        return
+
+    if args.command == "render":
+        project = load_project(Path(args.manifest))
+        ctl = load_ctl(Path(args.ctl))
+        render_draft(ctl, project, Path(args.proxy_dir), Path(args.out), Path(args.music) if args.music else None)
+        print(f"Draft rendered -> {args.out}")
+        return
+
+    if args.command == "export-otio":
+        project = load_project(Path(args.manifest))
+        edit_plan = load_edit_plan(Path(args.edit_plan))
+        export_otio(project, edit_plan, Path(args.out))
+        print(f"OTIO exported -> {args.out}")
+        return
+
     if args.command == "prepare":
         source_root = Path(args.folder)
         work_dir = Path(args.work_dir)
@@ -121,7 +165,10 @@ def main() -> None:
             f"Prepared media: {project.project_name}: {len(project.assets)} assets, "
             f"{len(vir.shots)} shots, {len(vir.warnings)} warnings"
         )
-        write_planning_outputs(vir_path, work_dir, args.duration, args.music)
+        edit_plan = write_planning_outputs(vir_path, work_dir, args.duration, args.music)
+        ctl = compile_ctl(edit_plan, vir, fps=args.fps, width=args.width)
+        write_model(work_dir / "ctl.json", ctl)
+        print(f"CTL ready: {len(ctl.clips)} clips, {len(ctl.transitions)} boundaries")
 
 
 if __name__ == "__main__":
