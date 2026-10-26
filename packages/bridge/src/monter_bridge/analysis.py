@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 
 from .analysis_models import ShotAnalysis, VirProject
+from .global_motion import sample_global_motion, summarize_global_motion
 from .models import MediaAsset, MonterProject
 from .motion import build_motion_anchors, sample_motion
 from .proxy import proxy_path_for
@@ -17,6 +18,7 @@ def analyze_asset(asset: MediaAsset, proxy_path: Path) -> list[ShotAnalysis]:
 
     for index, shot_range in enumerate(shots):
         samples = sample_motion(proxy_path, shot_range)
+        global_samples = sample_global_motion(proxy_path, shot_range)
         magnitudes = [sample.magnitude for sample in samples]
         analyses.append(
             ShotAnalysis(
@@ -27,6 +29,7 @@ def analyze_asset(asset: MediaAsset, proxy_path: Path) -> list[ShotAnalysis]:
                 peak_motion=max(magnitudes, default=0.0),
                 motion_samples=samples,
                 edit_anchors=build_motion_anchors(samples, shot_range),
+                global_motion=summarize_global_motion(global_samples),
             )
         )
 
