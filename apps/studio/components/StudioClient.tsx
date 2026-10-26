@@ -108,6 +108,7 @@ export function StudioClient() {
         <a className="navItem" href="#director">Director</a>
         <a className="navItem" href="#timeline">Timeline</a>
         <a className="navItem" href="#transitions">Transitions</a>
+        <a className="navItem" href="#compute">Compute</a>
         <a className="navItem" href="#corrections">Corrections</a>
         <a className="navItem" href="#reviews">Reviews</a>
         <a className="navItem" href="#critic">Critic</a>
@@ -172,6 +173,21 @@ export function StudioClient() {
               <small>motivation {candidate.motivationScore.toFixed(2)} · feasibility {candidate.feasibilityScore.toFixed(2)} · needs {candidate.requiredHandleSeconds.toFixed(2)}s handles</small>
             </div>)}</div>
           </div>)}</div> : <div className="emptyState">Load `transition-opportunities.json` to inspect candidate feasibility before any non-zero bridge is compiled.</div>}
+        </article>
+
+        <article className="card timelineCard" id="compute">
+          <div className="sectionHeading"><div><p className="label">ADVANCED ANALYSIS</p><h2>Compute budget map</h2></div><span className="pill">{bundle.advancedAnalysis?.requests.length ?? 0} selected / {bundle.advancedAnalysis?.maxBoundaries ?? 0} max</span></div>
+          {bundle.advancedAnalysis ? <>
+            {bundle.advancedAnalysis.requests.length > 0 ? <div className="timeline">{bundle.advancedAnalysis.requests.map((request) => <div className="timelineClip" key={request.boundaryIndex}>
+              <div className="clipTop"><strong>Boundary {request.boundaryIndex}</strong><span>priority {Math.round(request.priority * 100)}%</span></div>
+              <div className="directorSections">{request.requestedFeatures.map((feature) => <span className="pill" key={feature}>{metricLabel(feature)}</span>)}</div>
+              <div className="clipTimes">LEFT · {request.leftWindow.assetId} / {request.leftWindow.shotId} · {request.leftWindow.sourceStartSeconds.toFixed(3)} → {request.leftWindow.sourceEndSeconds.toFixed(3)}s</div>
+              <div className="clipTimes">RIGHT · {request.rightWindow.assetId} / {request.rightWindow.shotId} · {request.rightWindow.sourceStartSeconds.toFixed(3)} → {request.rightWindow.sourceEndSeconds.toFixed(3)}s</div>
+              <p>{request.reason}</p>
+              <div className="clipSignals"><span>evidence · {formatDecision(request.evidence)}</span></div>
+            </div>)}</div> : <div className="emptyState">Cheap VIR/CutSignature evidence was sufficient for every current boundary; no expensive pass was budgeted.</div>}
+            {bundle.advancedAnalysis.skippedBoundaries.length > 0 && <div className="findingList">{bundle.advancedAnalysis.skippedBoundaries.map((skipped) => <div className="finding finding-info" key={`${skipped.boundaryIndex}-${skipped.reason}`}><strong>Boundary {skipped.boundaryIndex} · skipped</strong><span>{skipped.reason}</span></div>)}</div>}
+          </> : <div className="emptyState">Load `advanced-analysis-plan.json` to see where MONTER would spend dense-flow/depth/segmentation compute. v0.16 schedules work only; it does not execute heavy model backends.</div>}
         </article>
 
         <article className="card timelineCard" id="corrections">
