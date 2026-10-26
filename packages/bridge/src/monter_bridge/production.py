@@ -51,7 +51,7 @@ def produce_project(
         write_model(work_dir / "audio-analysis.json", audio)
 
     edit = build_edit_plan(vir, director, audio)
-    ctl = compile_ctl(edit, vir, fps=fps, width=width)
+    ctl = compile_ctl(edit, vir, fps=fps, width=width, project=project)
     critic = critique_edit(edit, ctl, vir)
     write_model(work_dir / "critic-00.json", critic)
 
@@ -64,7 +64,7 @@ def produce_project(
         if not revision_report.changed:
             break
         edit = revised
-        ctl = compile_ctl(edit, vir, fps=fps, width=width)
+        ctl = compile_ctl(edit, vir, fps=fps, width=width, project=project)
         critic = critique_edit(edit, ctl, vir)
         write_model(work_dir / f"critic-{iteration:02d}.json", critic)
         revision_iterations = iteration
@@ -75,22 +75,11 @@ def produce_project(
     export_otio(project, edit, work_dir / "edit.otio")
 
     if render:
-        render_draft(
-            ctl,
-            project,
-            proxy_dir,
-            work_dir / "rough-cut.mp4",
-            music,
-        )
+        render_draft(ctl, project, proxy_dir, work_dir / "rough-cut.mp4", music, use_source_audio=True)
 
     artifacts = [
-        "project.monter.json",
-        "vir.monter.json",
-        "director-plan.json",
-        "edit-plan.json",
-        "ctl.json",
-        "critic-report.json",
-        "edit.otio",
+        "project.monter.json", "vir.monter.json", "director-plan.json", "edit-plan.json",
+        "ctl.json", "critic-report.json", "edit.otio",
     ]
     if audio:
         artifacts.append("audio-analysis.json")
