@@ -9,6 +9,7 @@ from .ctl import compile_ctl
 from .director import default_director_plan
 from .ingest import ingest_project
 from .manifest_io import write_model
+from .microscope_models import StyleProfile
 from .otio_export import export_otio
 from .planner import build_edit_plan
 from .production_models import ProductionReport
@@ -27,6 +28,7 @@ def produce_project(
     fps: int = 24,
     max_revision_iterations: int = 2,
     render: bool = True,
+    style_profile: StyleProfile | None = None,
 ) -> ProductionReport:
     if max_revision_iterations < 0 or max_revision_iterations > 4:
         raise ValueError("max_revision_iterations must be between 0 and 4")
@@ -51,7 +53,7 @@ def produce_project(
     if audio:
         write_model(work_dir / "audio-analysis.json", audio)
 
-    edit = build_edit_plan(vir, director, audio)
+    edit = build_edit_plan(vir, director, audio, style_profile=style_profile)
     ctl = compile_ctl(edit, vir, fps=fps, width=width)
     critic = critique_edit(edit, ctl, vir)
     write_model(work_dir / "critic-00.json", critic)
