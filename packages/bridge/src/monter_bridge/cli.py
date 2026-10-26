@@ -119,12 +119,19 @@ def main() -> None:
     add_shared_media_args(prepare)
     add_plan_args(prepare)
 
-    produce = sub.add_parser("produce", help="run the bounded CINEMA-0 pipeline through critique, render, and OTIO export")
+    produce = sub.add_parser("produce", help="run the bounded autonomous CINEMA-0 production pipeline")
     produce.add_argument("folder")
     produce.add_argument("--name", default="MONTER Project")
     produce.add_argument("--work-dir", default=".monter")
     produce.add_argument("--max-revisions", type=int, default=2)
-    produce.add_argument("--no-render", action="store_true", help="skip MP4 rendering but produce every planning artifact")
+    produce.add_argument("--max-advanced-boundaries", type=int, default=4, help="maximum boundaries eligible for selective advanced analysis")
+    produce.add_argument("--no-advanced-pass", action="store_true", help="schedule but do not execute selective dense-flow/refinement")
+    produce.add_argument("--advanced-sample-fps", type=float, default=12.0, help="sample rate for scheduler-selected dense-flow windows")
+    produce.add_argument("--advanced-analysis-width", type=int, default=320, help="working width for selective dense-flow windows")
+    produce.add_argument("--no-sound-pass", action="store_true", help="skip source-audio analysis and autonomous J/L decisions")
+    produce.add_argument("--max-jl-cuts", type=int, default=2, help="maximum autonomous non-sync J/L cuts")
+    produce.add_argument("--audio-safe-threshold-dbfs", type=float, default=-0.5, help="decoded sample-peak gate after audio render")
+    produce.add_argument("--no-render", action="store_true", help="skip MP4 rendering but produce every planning/intelligence artifact")
     add_shared_media_args(produce)
     add_plan_args(produce)
 
@@ -213,10 +220,19 @@ def main() -> None:
             max_revision_iterations=args.max_revisions,
             render=not args.no_render,
             style_profile=load_style_profile(Path(args.style_profile)) if args.style_profile else None,
+            max_advanced_boundaries=args.max_advanced_boundaries,
+            run_advanced_pass=not args.no_advanced_pass,
+            advanced_sample_fps=args.advanced_sample_fps,
+            advanced_analysis_width=args.advanced_analysis_width,
+            run_sound_pass=not args.no_sound_pass,
+            max_jl_cuts=args.max_jl_cuts,
+            audio_safety_threshold_dbfs=args.audio_safe_threshold_dbfs,
         )
         print(
             f"Production {report.status}: {report.assets_ingested} assets, {report.shots_analyzed} shots, "
-            f"{report.edit_segments} edit segments, {report.revision_iterations} revision iteration(s)"
+            f"{report.edit_segments} edit segments, {report.revision_iterations} revision(s), "
+            f"advanced={report.advanced_boundaries_executed} boundary result(s), "
+            f"J/L={report.sound_non_sync_selected}, mixAudit={report.audio_mix_audited}"
         )
         return
 

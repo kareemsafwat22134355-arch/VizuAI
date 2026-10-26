@@ -41,6 +41,60 @@ def _make_clip(path: Path, lavfi_source: str, duration: float = 2.4) -> None:
     )
 
 
+def _make_av_clip(path: Path, color: str, frequency: int, duration: float = 2.4) -> None:
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            f"color=c={color}:size=320x180:rate=12",
+            "-f",
+            "lavfi",
+            "-i",
+            f"sine=frequency={frequency}:sample_rate=48000",
+            "-t",
+            str(duration),
+            "-shortest",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "ultrafast",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "96k",
+            str(path),
+        ],
+        check=True,
+    )
+
+
+def _probe(path: Path) -> dict:
+    completed = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_streams",
+            "-show_format",
+            "-of",
+            "json",
+            str(path),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return json.loads(completed.stdout)
+
+
 @pytest.mark.skipif(not FFMPEG_AVAILABLE, reason="FFmpeg/ffprobe required for real-media smoke test")
 def test_produce_real_media_end_to_end(tmp_path: Path):
     raw = tmp_path / "RAW"
@@ -64,6 +118,10 @@ def test_produce_real_media_end_to_end(tmp_path: Path):
     assert report.assets_ingested == 3
     assert report.shots_analyzed >= 3
     assert report.edit_segments >= 4
+    assert report.advanced_pass_executed is True
+    assert report.sound_pass_executed is True
+    assert report.audio_mix_audited is False
+    assert report.audio_mix_safe is None
 
     expected = {
         "project.monter.json",
@@ -74,6 +132,10 @@ def test_produce_real_media_end_to_end(tmp_path: Path):
         "critic-report.json",
         "transition-opportunities.json",
         "advanced-analysis-plan.json",
+        "advanced-analysis-results.json",
+        "transition-refinement.json",
+        "sound-director.json",
+        "audio-edit-plan.json",
         "production-report.json",
         "edit.otio",
         "rough-cut.mp4",
@@ -97,6 +159,13 @@ def test_produce_real_media_end_to_end(tmp_path: Path):
     assert all(request["boundaryIndex"] >= 1 for request in advanced["requests"])
     assert all(set(request["requestedFeatures"]).issubset(valid_features) for request in advanced["requests"])
 
+    advanced_results = json.loads((work / "advanced-analysis-results.json").read_text(encoding="utf-8"))
+    refinement = json.loads((work / "transition-refinement.json").read_text(encoding="utf-8"))
+    sound = json.loads((work / "sound-director.json").read_text(encoding="utf-8"))
+    assert advanced_results["projectId"] == report.project_id
+    assert refinement["projectId"] == report.project_id
+    assert sound["projectId"] == report.project_id
+
     manifest = json.loads((work / "project.monter.json").read_text(encoding="utf-8"))
     assert len(manifest["assets"]) == 3
     for asset in manifest["assets"]:
@@ -117,5 +186,50 @@ def test_produce_real_media_end_to_end(tmp_path: Path):
         assert "project.monter.json" in names
         assert "transition-opportunities.json" in names
         assert "advanced-analysis-plan.json" in names
+        assert "advanced-analysis-results.json" in names
+        assert "transition-refinement.json" in names
+        assert "sound-director.json" in names
+        assert "audio-edit-plan.json" in names
         assert "rough-cut.mp4" in names
         assert all(not name.startswith("proxies/") for name in names)
+
+
+@pytest.mark.skipif(not FFMPEG_AVAILABLE, reason="FFmpeg/ffprobe required for real-media smoke test")
+def test_produce_audio_media_runs_sound_render_and_mix_audit(tmp_path: Path):
+    raw = tmp_path / "RAW"
+    raw.mkdir()
+    _make_av_clip(raw / "01_blue.mp4", "0x203060", 330)
+    _make_av_clip(raw / "02_red.mp4", "0x602020", 440)
+    _make_av_clip(raw / "03_green.mp4", "0x206030", 550)
+
+    work = tmp_path / ".monter"
+    report = produce_project(
+        source_root=raw,
+        project_name="Audio E2E Fixture",
+        work_dir=work,
+        duration=4.0,
+        width=320,
+        fps=12,
+        max_revision_iterations=0,
+        render=True,
+    )
+
+    assert report.sound_pass_executed is True
+    assert report.audio_mix_audited is True
+    assert report.audio_mix_safe is True
+    assert "sound-director.json" in report.artifacts
+    assert "audio-edit-plan.json" in report.artifacts
+    assert "audio-mix-audit.json" in report.artifacts
+
+    audio_plan = json.loads((work / "audio-edit-plan.json").read_text(encoding="utf-8"))
+    audit = json.loads((work / "audio-mix-audit.json").read_text(encoding="utf-8"))
+    assert audio_plan["projectId"] == report.project_id
+    assert len(audio_plan["events"]) > 0
+    assert audit["clippingSafe"] is True
+    assert audit["maxVolumeDbfs"] <= audit["safetyThresholdDbfs"]
+
+    probe = _probe(work / "rough-cut.mp4")
+    codec_types = {stream["codec_type"] for stream in probe["streams"]}
+    assert "video" in codec_types
+    assert "audio" in codec_types
+    assert float(probe["format"]["duration"]) == pytest.approx(4.0, abs=0.08)
