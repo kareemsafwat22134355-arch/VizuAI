@@ -124,6 +124,32 @@ export type TransitionOpportunityReport = {
   notes: string[];
 };
 
+export type AdvancedFeature = "dense_flow" | "depth" | "segmentation";
+export type SourceAnalysisWindow = {
+  segmentId: string;
+  assetId: string;
+  shotId: string;
+  sourceStartSeconds: number;
+  sourceEndSeconds: number;
+};
+export type BoundaryAnalysisRequest = {
+  boundaryIndex: number;
+  priority: number;
+  requestedFeatures: AdvancedFeature[];
+  leftWindow: SourceAnalysisWindow;
+  rightWindow: SourceAnalysisWindow;
+  reason: string;
+  evidence: Record<string, string | number | boolean>;
+};
+export type AdvancedAnalysisPlan = {
+  schemaVersion: "advanced-analysis-plan-0.1";
+  projectId: string;
+  maxBoundaries: number;
+  requests: BoundaryAnalysisRequest[];
+  skippedBoundaries: Array<{ boundaryIndex: number; reason: string }>;
+  notes: string[];
+};
+
 export type DecisionScalar = string | number | boolean | null;
 export type DecisionKind = "shot_selection" | "trim" | "transition" | "timewarp" | "role" | "other";
 export type DecisionTargetType = "project" | "segment" | "boundary";
@@ -222,6 +248,7 @@ export type ArtifactBundle = {
   edit?: EditPlan;
   ctl?: CtlProgram;
   transitionOpportunities?: TransitionOpportunityReport;
+  advancedAnalysis?: AdvancedAnalysisPlan;
   corrections?: CorrectionLedger;
   reviews?: DecisionReviewLedger;
   reviewSummary?: DecisionReviewSummary;
@@ -261,6 +288,10 @@ export function parseArtifact(filename: string, value: unknown): Partial<Artifac
     if (!Array.isArray(value.boundaries) || typeof value.projectId !== "string") throw new Error(`${filename}: invalid transition opportunity report`);
     return { transitionOpportunities: value as TransitionOpportunityReport };
   }
+  if (filename.endsWith("advanced-analysis-plan.json") || value.schemaVersion === "advanced-analysis-plan-0.1") {
+    if (value.schemaVersion !== "advanced-analysis-plan-0.1" || !Array.isArray(value.requests) || !Array.isArray(value.skippedBoundaries) || typeof value.projectId !== "string") throw new Error(`${filename}: invalid advanced analysis plan`);
+    return { advancedAnalysis: value as AdvancedAnalysisPlan };
+  }
   if (filename.endsWith("human-corrections.json") || value.schemaVersion === "human-corrections-0.1") {
     if (value.schemaVersion !== "human-corrections-0.1" || !Array.isArray(value.corrections) || typeof value.projectId !== "string") throw new Error(`${filename}: invalid human correction ledger`);
     return { corrections: value as CorrectionLedger };
@@ -293,6 +324,7 @@ export function mergeArtifacts(current: ArtifactBundle, filename: string, value:
     next.edit?.projectId,
     next.ctl?.projectId,
     next.transitionOpportunities?.projectId,
+    next.advancedAnalysis?.projectId,
     next.corrections?.projectId,
     next.reviews?.projectId,
     next.reviewSummary?.projectId,
