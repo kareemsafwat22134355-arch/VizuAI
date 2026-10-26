@@ -18,5 +18,12 @@ class ProductionReport(PortableModel):
     edit_segments: int = Field(ge=0)
     target_duration_seconds: float = Field(gt=0)
     actual_duration_seconds: float = Field(gt=0)
+    advanced_pass_executed: bool = False
+    advanced_boundaries_executed: int = Field(default=0, ge=0)
+    transition_refinements_applied: int = Field(default=0, ge=0)
+    sound_pass_executed: bool = False
+    sound_non_sync_selected: int = Field(default=0, ge=0)
+    audio_mix_audited: bool = False
+    audio_mix_safe: bool | None = None
     artifacts: list[str]
     warnings: list[str] = Field(default_factory=list)
