@@ -4,7 +4,7 @@ from copy import deepcopy
 
 from pydantic import Field
 
-from .analysis_models import ShotAnalysis, VirProject
+from .analysis_models import EditAnchor, ShotAnalysis, VirProject
 from .cut_signature import build_cut_signature
 from .models import PortableModel
 from .motion_match_realign import propose_motion_match_realign
@@ -48,7 +48,7 @@ def _anchor_candidates(
     anchor_types: set[str],
     max_shift_seconds: float,
     min_anchor_confidence: float,
-):
+) -> list[tuple[EditAnchor, float]]:
     edge_time = segment.source_out_seconds if edge == "out" else segment.source_in_seconds
     return [
         (anchor, anchor.time_seconds - edge_time)
@@ -64,7 +64,7 @@ def propose_motion_match_boundary_roll(
     vir: VirProject,
     boundary_index: int,
     *,
-    max_shift_seconds: float = 0.35,
+    max_shift_seconds: float = 0.45,
     min_anchor_confidence: float = 0.80,
     max_anchor_delta_difference: float = 0.10,
     minimum_phase_gain: float = 0.40,
@@ -109,7 +109,7 @@ def propose_motion_match_boundary_roll(
     if not left_candidates or not right_candidates:
         return None
 
-    proposals: list[tuple[float, object, object, EditSegment, EditSegment, float]] = []
+    proposals: list[tuple[float, EditAnchor, EditAnchor, EditSegment, EditSegment, float]] = []
     for left_anchor, left_delta in left_candidates:
         for right_anchor, right_delta in right_candidates:
             if abs(left_delta - right_delta) > max_anchor_delta_difference:
