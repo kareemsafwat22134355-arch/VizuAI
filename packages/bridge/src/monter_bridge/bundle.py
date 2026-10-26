@@ -15,6 +15,7 @@ CORE_ARTIFACTS = (
     "edit-plan.json",
     "ctl.json",
     "critic-report.json",
+    "final-critic-report.json",
     "transition-opportunities.json",
     "advanced-analysis-plan.json",
     "advanced-analysis-results.json",
@@ -62,7 +63,7 @@ def create_share_bundle(work_dir: Path, output: Path, include_preview: bool = Tr
         "notes": [
             "RAW source media is intentionally excluded.",
             "Analysis proxies are intentionally excluded from the share bundle.",
-            "Human feedback, selective-analysis evidence, render re-analysis, and source-audio edit metadata may be included because they contain editorial/quality decisions rather than source media.",
+            "Human feedback, final critic evidence, selective-analysis evidence, render re-analysis, and source-audio edit metadata may be included because they contain editorial/quality decisions rather than source media.",
             "All source references inside the project manifest are relative paths.",
         ],
     }

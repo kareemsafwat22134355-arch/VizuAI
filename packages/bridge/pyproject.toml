@@ -1,6 +1,6 @@
 [project]
 name = "monter-bridge"
-version = "0.23.0"
+version = "0.24.0"
 description = "8GB-RAM-first local cinematic intelligence bridge for MONTER"
 requires-python = ">=3.11"
 dependencies = [
