@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+
 import orjson
 
 from .ingest import ingest_project
@@ -19,7 +20,8 @@ def main() -> None:
     args = parser.parse_args()
     if args.command == "ingest":
         project = ingest_project(Path(args.folder), args.name)
-        Path(args.out).write_bytes(orjson.dumps(project.model_dump(), option=orjson.OPT_INDENT_2))
+        portable = project.model_dump(by_alias=True)
+        Path(args.out).write_bytes(orjson.dumps(portable, option=orjson.OPT_INDENT_2))
         print(f"Indexed {len(project.assets)} assets -> {args.out}")
 
 
