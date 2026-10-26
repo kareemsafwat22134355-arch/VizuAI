@@ -8,11 +8,21 @@ MONTER does not upload giant RAW folders to the web. It separates media processi
 - `apps/studio` — Vercel-hosted workspace for inspecting VIR, director intent, edit plans, CTL and critic decisions.
 - `contracts` — portable data contracts shared between the two sides.
 
-## One-command CINEMA-0 production
+## Local machine preflight
+
+Install the bridge, then verify that the machine has the two native media tools MONTER requires:
 
 ```bash
 cd packages/bridge
 python -m pip install -e .
+monter-doctor --work-dir ".monter"
+```
+
+The doctor checks Python, `ffmpeg`, `ffprobe`, and write access. The bridge is deliberately proxy-first: RAW files remain untouched and are never loaded wholesale into RAM.
+
+## One-command CINEMA-0 production
+
+```bash
 monter produce "D:/Project/RAW" \
   --name "Trailer" \
   --music "D:/Project/music.wav" \
@@ -20,7 +30,7 @@ monter produce "D:/Project/RAW" \
   --work-dir ".monter"
 ```
 
-The RAW footage stays local. The run produces a transparent working bundle:
+The RAW footage stays local. The run produces a transparent working directory:
 
 ```text
 .monter/
@@ -37,10 +47,28 @@ The RAW footage stays local. The run produces a transparent working bundle:
   proxies/
 ```
 
+Proxy reuse is parameter-aware. MONTER only reuses a proxy when the source file fingerprint and the requested analysis `width`/`fps` still match; changing proxy settings automatically invalidates the cached proxy.
+
+## Share a project without sending the RAW footage
+
+After a run, create a portable analysis package:
+
+```bash
+monter-bundle .monter --out trailer.monter.zip
+```
+
+The share bundle can contain the manifest, VIR, director/edit/CTL/critic artifacts, OTIO timeline, and optional rough-cut preview. It **never includes RAW media or the analysis proxy directory**. Source references in the project manifest are relative paths, so another MONTER instance can reason about the project without learning the absolute path on your computer.
+
+Use `--no-preview` when you want the smallest possible bundle:
+
+```bash
+monter-bundle .monter --out trailer-analysis-only.monter.zip --no-preview
+```
+
 The current baseline uses PySceneDetect, low-resolution streaming OpenCV optical flow, librosa audio analysis, typed CTL, FFmpeg draft rendering and OpenTimelineIO export. The critic keeps quality dimensions separate and can run a bounded targeted revision loop instead of endlessly regenerating the edit.
 
-## Development rule
+## Testing rule
 
-Every pull request must pass Studio and Bridge tests before it is considered merge-ready.
+Every pull request must pass Studio tests/build plus Bridge unit tests and a real-media smoke test before it is considered merge-ready. The Bridge smoke test generates actual video clips with FFmpeg and runs the CINEMA-0 pipeline through proxying, analysis, planning, CTL, critique, OTIO export, rendering, and portable bundle creation.
 
 See `docs/ARCHITECTURE.md` and `docs/OPEN_SOURCE.md`.
