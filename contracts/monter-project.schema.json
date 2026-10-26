@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vizuai.local/contracts/monter-project-0.1.schema.json",
+  "title": "MONTER Project Manifest 0.1",
+  "type": "object",
+  "required": ["schemaVersion", "projectId", "projectName", "createdAt", "sourceRootLabel", "sourceBytes", "proxyBytes", "assets"],
+  "properties": {
+    "schemaVersion": { "const": "monter-project-0.1" },
+    "projectId": { "type": "string", "minLength": 1 },
+    "projectName": { "type": "string", "minLength": 1 },
+    "createdAt": { "type": "string" },
+    "sourceRootLabel": { "type": "string" },
+    "sourceBytes": { "type": "integer", "minimum": 0 },
+    "proxyBytes": { "type": "integer", "minimum": 0 },
+    "assets": { "type": "array" }
+  },
+  "additionalProperties": true
+}
