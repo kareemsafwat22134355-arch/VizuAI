@@ -150,6 +150,41 @@ export type AdvancedAnalysisPlan = {
   notes: string[];
 };
 
+export type DenseFlowWindowSummary = {
+  segmentId: string;
+  assetId: string;
+  shotId: string;
+  sourceStartSeconds: number;
+  sourceEndSeconds: number;
+  sampleCount: number;
+  meanMagnitude: number;
+  p90Magnitude: number;
+  meanDx: number;
+  meanDy: number;
+  directionalCoherence: number;
+};
+export type FeatureExecutionResult = {
+  feature: AdvancedFeature;
+  status: "completed" | "backend_unavailable" | "failed" | "skipped";
+  backend: string;
+  reason: string;
+  metrics: Record<string, string | number | boolean>;
+};
+export type BoundaryExecutionResult = {
+  boundaryIndex: number;
+  priority: number;
+  leftFlow?: DenseFlowWindowSummary | null;
+  rightFlow?: DenseFlowWindowSummary | null;
+  flowDirectionCompatibility?: number | null;
+  features: FeatureExecutionResult[];
+};
+export type AdvancedAnalysisResults = {
+  schemaVersion: "advanced-analysis-results-0.1";
+  projectId: string;
+  boundaries: BoundaryExecutionResult[];
+  notes: string[];
+};
+
 export type DecisionScalar = string | number | boolean | null;
 export type DecisionKind = "shot_selection" | "trim" | "transition" | "timewarp" | "role" | "other";
 export type DecisionTargetType = "project" | "segment" | "boundary";
@@ -249,6 +284,7 @@ export type ArtifactBundle = {
   ctl?: CtlProgram;
   transitionOpportunities?: TransitionOpportunityReport;
   advancedAnalysis?: AdvancedAnalysisPlan;
+  advancedResults?: AdvancedAnalysisResults;
   corrections?: CorrectionLedger;
   reviews?: DecisionReviewLedger;
   reviewSummary?: DecisionReviewSummary;
@@ -292,6 +328,10 @@ export function parseArtifact(filename: string, value: unknown): Partial<Artifac
     if (value.schemaVersion !== "advanced-analysis-plan-0.1" || !Array.isArray(value.requests) || !Array.isArray(value.skippedBoundaries) || typeof value.projectId !== "string") throw new Error(`${filename}: invalid advanced analysis plan`);
     return { advancedAnalysis: value as AdvancedAnalysisPlan };
   }
+  if (filename.endsWith("advanced-analysis-results.json") || value.schemaVersion === "advanced-analysis-results-0.1") {
+    if (value.schemaVersion !== "advanced-analysis-results-0.1" || !Array.isArray(value.boundaries) || typeof value.projectId !== "string") throw new Error(`${filename}: invalid advanced analysis results`);
+    return { advancedResults: value as AdvancedAnalysisResults };
+  }
   if (filename.endsWith("human-corrections.json") || value.schemaVersion === "human-corrections-0.1") {
     if (value.schemaVersion !== "human-corrections-0.1" || !Array.isArray(value.corrections) || typeof value.projectId !== "string") throw new Error(`${filename}: invalid human correction ledger`);
     return { corrections: value as CorrectionLedger };
@@ -325,6 +365,7 @@ export function mergeArtifacts(current: ArtifactBundle, filename: string, value:
     next.ctl?.projectId,
     next.transitionOpportunities?.projectId,
     next.advancedAnalysis?.projectId,
+    next.advancedResults?.projectId,
     next.corrections?.projectId,
     next.reviews?.projectId,
     next.reviewSummary?.projectId,
