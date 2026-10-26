@@ -21,7 +21,7 @@ jobs:
       - run: npm run build
 
   bridge:
-    name: Bridge pytest
+    name: Bridge pytest + real media smoke
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,5 +29,14 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+      - name: Ensure FFmpeg is available
+        run: |
+          if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
       - run: python -m pip install -e "packages/bridge[dev]"
+      - run: monter-doctor
       - run: python -m pytest packages/bridge/tests
