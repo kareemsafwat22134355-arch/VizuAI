@@ -63,6 +63,27 @@ function opportunitiesJson() {
   });
 }
 
+function advancedAnalysisJson(projectId = "project_test") {
+  return JSON.stringify({
+    schemaVersion: "advanced-analysis-plan-0.1",
+    projectId,
+    maxBoundaries: 4,
+    requests: [
+      {
+        boundaryIndex: 1,
+        priority: 0.82,
+        requestedFeatures: ["dense_flow", "depth"],
+        leftWindow: { segmentId: "left", assetId: "a", shotId: "sa", sourceStartSeconds: 1.6, sourceEndSeconds: 2.1 },
+        rightWindow: { segmentId: "right", assetId: "b", shotId: "sb", sourceStartSeconds: 0.8, sourceEndSeconds: 1.3 },
+        reason: "zoom relation needs selective refinement",
+        evidence: { recommendedMechanism: "zoom_bridge", relationScore: 0.72 },
+      },
+    ],
+    skippedBoundaries: [{ boundaryIndex: 2, reason: "cheap evidence sufficient" }],
+    notes: [],
+  });
+}
+
 function correctionsJson() {
   return JSON.stringify({
     schemaVersion: "human-corrections-0.1",
@@ -175,6 +196,19 @@ describe("importMonterBundle", () => {
     expect(result.artifacts.transitionOpportunities?.boundaries[0].recommendedMechanism).toBe("directional_bridge");
   });
 
+  it("loads selective advanced-analysis requests from the bundle", async () => {
+    const file = bundleFile({
+      "bundle-manifest.json": strToU8(manifest({ includedArtifacts: ["project.monter.json", "advanced-analysis-plan.json"] })),
+      "project.monter.json": strToU8(projectJson()),
+      "advanced-analysis-plan.json": strToU8(advancedAnalysisJson()),
+    });
+
+    const result = await importMonterBundle(file);
+    expect(result.artifacts.advancedAnalysis?.requests).toHaveLength(1);
+    expect(result.artifacts.advancedAnalysis?.requests[0].requestedFeatures).toEqual(["dense_flow", "depth"]);
+    expect(result.artifacts.advancedAnalysis?.requests[0].priority).toBe(0.82);
+  });
+
   it("loads human correction decisions from the bundle", async () => {
     const file = bundleFile({
       "bundle-manifest.json": strToU8(manifest({ includedArtifacts: ["project.monter.json", "human-corrections.json"] })),
@@ -214,6 +248,15 @@ describe("importMonterBundle", () => {
       "human-corrections.json": strToU8(JSON.stringify(mismatched)),
     });
 
+    await expect(importMonterBundle(file)).rejects.toThrow(/projectId does not match/i);
+  });
+
+  it("rejects advanced-analysis plans from another project", async () => {
+    const file = bundleFile({
+      "bundle-manifest.json": strToU8(manifest()),
+      "project.monter.json": strToU8(projectJson()),
+      "advanced-analysis-plan.json": strToU8(advancedAnalysisJson("another_project")),
+    });
     await expect(importMonterBundle(file)).rejects.toThrow(/projectId does not match/i);
   });
 
