@@ -63,6 +63,30 @@ function opportunitiesJson() {
   });
 }
 
+function correctionsJson() {
+  return JSON.stringify({
+    schemaVersion: "human-corrections-0.1",
+    projectId: "project_test",
+    createdAt: "2026-10-26T00:00:00Z",
+    updatedAt: "2026-10-26T00:01:00Z",
+    corrections: [
+      {
+        id: "correction_1",
+        kind: "transition",
+        targetType: "boundary",
+        targetRef: "1",
+        aiDecision: { mechanism: "directional_bridge" },
+        humanDecision: { mechanism: "hard_cut" },
+        context: { directorRole: "rupture", relationScore: 0.78 },
+        reason: "The rupture should feel abrupt.",
+        source: "cli",
+        createdAt: "2026-10-26T00:01:00Z",
+      },
+    ],
+    notes: [],
+  });
+}
+
 function bundleFile(entries: Record<string, Uint8Array>) {
   return new Blob([zipSync(entries)], { type: "application/zip" });
 }
@@ -92,6 +116,32 @@ describe("importMonterBundle", () => {
     const result = await importMonterBundle(file);
     expect(result.artifacts.transitionOpportunities?.boundaries).toHaveLength(1);
     expect(result.artifacts.transitionOpportunities?.boundaries[0].recommendedMechanism).toBe("directional_bridge");
+  });
+
+  it("loads human correction decisions from the bundle", async () => {
+    const file = bundleFile({
+      "bundle-manifest.json": strToU8(manifest({ includedArtifacts: ["project.monter.json", "human-corrections.json"] })),
+      "project.monter.json": strToU8(projectJson()),
+      "human-corrections.json": strToU8(correctionsJson()),
+    });
+
+    const result = await importMonterBundle(file);
+    const correction = result.artifacts.corrections?.corrections[0];
+    expect(correction?.aiDecision.mechanism).toBe("directional_bridge");
+    expect(correction?.humanDecision.mechanism).toBe("hard_cut");
+    expect(correction?.context.directorRole).toBe("rupture");
+  });
+
+  it("rejects a correction ledger from a different project", async () => {
+    const mismatched = JSON.parse(correctionsJson());
+    mismatched.projectId = "another_project";
+    const file = bundleFile({
+      "bundle-manifest.json": strToU8(manifest()),
+      "project.monter.json": strToU8(projectJson()),
+      "human-corrections.json": strToU8(JSON.stringify(mismatched)),
+    });
+
+    await expect(importMonterBundle(file)).rejects.toThrow(/projectId does not match/i);
   });
 
   it("ignores unknown root entries instead of decompressing them", async () => {

@@ -16,6 +16,7 @@ CORE_ARTIFACTS = (
     "ctl.json",
     "critic-report.json",
     "transition-opportunities.json",
+    "human-corrections.json",
     "production-report.json",
     "audio-analysis.json",
     "edit.otio",
@@ -51,6 +52,7 @@ def create_share_bundle(work_dir: Path, output: Path, include_preview: bool = Tr
         "notes": [
             "RAW source media is intentionally excluded.",
             "Analysis proxies are intentionally excluded from the share bundle.",
+            "Human correction ledgers may be included because they contain editorial decisions, not source media.",
             "All source references inside the project manifest are relative paths.",
         ],
     }

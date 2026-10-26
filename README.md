@@ -42,6 +42,7 @@ The RAW footage stays local. The run produces a transparent working directory:
   ctl.json
   critic-report.json
   transition-opportunities.json
+  human-corrections.json    # after human feedback is recorded
   production-report.json
   edit.otio
   rough-cut.mp4
@@ -61,7 +62,7 @@ After a run, create a portable analysis package:
 monter-bundle .monter --out trailer.monter.zip
 ```
 
-The share bundle can contain the manifest, VIR, director/edit/CTL/critic artifacts, transition-opportunity reasoning, OTIO timeline, and optional rough-cut preview. It **never includes RAW media, analysis proxies, or the analysis cache**. Source references in the project manifest are relative paths, so another MONTER instance can reason about the project without learning the absolute path on your computer.
+The share bundle can contain the manifest, VIR, director/edit/CTL/critic artifacts, transition-opportunity reasoning, human correction history, OTIO timeline, and optional rough-cut preview. It **never includes RAW media, analysis proxies, or the analysis cache**. Source references in the project manifest are relative paths, so another MONTER instance can reason about the project without learning the absolute path on your computer.
 
 Use `--no-preview` when you want the smallest possible bundle:
 
@@ -137,10 +138,37 @@ A non-zero bridge is **not** compiled when either adjacent segment has an event-
 
 `zoom_bridge` remains a scored opportunity only in v0.13; it is not yet a renderer primitive. Older `ctl-0.1` bundles remain readable in Studio while new renders emit `ctl-0.2`.
 
+## Human correction ledger
+
+v0.14 starts preserving the most valuable supervision MONTER can receive: a human editor changing a concrete AI decision in context.
+
+Record a correction against the current project manifest:
+
+```bash
+monter-correction \
+  --project-manifest ".monter/project.monter.json" \
+  --ledger ".monter/human-corrections.json" \
+  --kind transition \
+  --target-type boundary \
+  --target-ref 3 \
+  --ai-json '{"mechanism":"directional_bridge","durationSeconds":0.12}' \
+  --human-json '{"mechanism":"hard_cut","durationSeconds":0}' \
+  --context-json '{"directorRole":"rupture","relationScore":0.74}' \
+  --reason "The rupture reads stronger without a smoothing bridge."
+```
+
+Each correction stores the AI decision, human replacement, explicit target, flat evidence/context snapshot, reason, source, and timestamp. Supported correction categories are `shot_selection`, `trim`, `transition`, `timewarp`, `role`, and `other`. Segment/boundary corrections require a target reference; project-level corrections do not.
+
+Writes are atomic and a ledger cannot be reused across different `projectId` values. MONTER also rejects a “correction” whose human decision is identical to the AI decision.
+
+`human-corrections.json` is included in portable `.monter.zip` bundles when present, and Studio displays the correction history as AI → HUMAN decisions with context and reasons.
+
+**Important:** v0.14 captures supervised evidence only. Corrections are not silently applied to future projects and are not converted into global style rules automatically. A later learning/evaluation layer must decide when a repeated correction is a general preference, a project-specific exception, or a dramatic-context rule.
+
 The current baseline uses PySceneDetect, low-resolution streaming OpenCV optical flow, librosa audio analysis, typed CTL, FFmpeg draft rendering and OpenTimelineIO export. The critic keeps quality dimensions separate and can run a bounded targeted revision loop instead of endlessly regenerating the edit.
 
 ## Testing rule
 
-Every pull request must pass Studio tests/build plus Bridge unit tests and real-media smoke coverage before it is considered merge-ready. The Bridge smoke test generates actual video clips with FFmpeg and runs the CINEMA-0 pipeline through proxying, analysis, planning, CTL, critique, transition-opportunity synthesis, OTIO export, rendering, and portable bundle creation. The directional bridge has its own encoded-media test that renders a real FFmpeg transition and verifies with `ffprobe` that the final duration does not shrink. The Video Microscope also has a real-media smoke test that generates a finished edit with hard cuts and verifies that its shot/cut analysis runs on actual encoded video.
+Every pull request must pass Studio tests/build plus Bridge unit tests and real-media smoke coverage before it is considered merge-ready. The Bridge smoke test generates actual video clips with FFmpeg and runs the CINEMA-0 pipeline through proxying, analysis, planning, CTL, critique, transition-opportunity synthesis, OTIO export, rendering, and portable bundle creation. The directional bridge has its own encoded-media test that renders a real FFmpeg transition and verifies with `ffprobe` that the final duration does not shrink. Correction-ledger tests verify project isolation, atomic persistence, target validation, and AI-vs-human decision preservation. The Video Microscope also has a real-media smoke test that generates a finished edit with hard cuts and verifies that its shot/cut analysis runs on actual encoded video.
 
 See `docs/ARCHITECTURE.md` and `docs/OPEN_SOURCE.md`.

@@ -124,6 +124,29 @@ export type TransitionOpportunityReport = {
   notes: string[];
 };
 
+export type DecisionScalar = string | number | boolean | null;
+export type HumanCorrection = {
+  id: string;
+  kind: "shot_selection" | "trim" | "transition" | "timewarp" | "role" | "other";
+  targetType: "project" | "segment" | "boundary";
+  targetRef?: string | null;
+  aiDecision: Record<string, DecisionScalar>;
+  humanDecision: Record<string, DecisionScalar>;
+  context: Record<string, DecisionScalar>;
+  reason: string;
+  source: "cli" | "studio" | "import" | "manual";
+  createdAt: string;
+};
+
+export type CorrectionLedger = {
+  schemaVersion: "human-corrections-0.1";
+  projectId: string;
+  createdAt: string;
+  updatedAt: string;
+  corrections: HumanCorrection[];
+  notes: string[];
+};
+
 export type CriticReport = {
   projectId: string;
   status: "pass" | "needs_revision";
@@ -152,6 +175,7 @@ export type ArtifactBundle = {
   edit?: EditPlan;
   ctl?: CtlProgram;
   transitionOpportunities?: TransitionOpportunityReport;
+  corrections?: CorrectionLedger;
   critic?: CriticReport;
   production?: ProductionReport;
 };
@@ -188,6 +212,10 @@ export function parseArtifact(filename: string, value: unknown): Partial<Artifac
     if (!Array.isArray(value.boundaries) || typeof value.projectId !== "string") throw new Error(`${filename}: invalid transition opportunity report`);
     return { transitionOpportunities: value as TransitionOpportunityReport };
   }
+  if (filename.endsWith("human-corrections.json") || value.schemaVersion === "human-corrections-0.1") {
+    if (value.schemaVersion !== "human-corrections-0.1" || !Array.isArray(value.corrections) || typeof value.projectId !== "string") throw new Error(`${filename}: invalid human correction ledger`);
+    return { corrections: value as CorrectionLedger };
+  }
   if (filename.endsWith("critic-report.json")) {
     if (!Array.isArray(value.metrics) || !Array.isArray(value.findings)) throw new Error(`${filename}: invalid critic report`);
     return { critic: value as CriticReport };
@@ -208,6 +236,7 @@ export function mergeArtifacts(current: ArtifactBundle, filename: string, value:
     next.edit?.projectId,
     next.ctl?.projectId,
     next.transitionOpportunities?.projectId,
+    next.corrections?.projectId,
     next.critic?.projectId,
     next.production?.projectId,
   ].filter(Boolean);

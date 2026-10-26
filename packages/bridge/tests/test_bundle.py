@@ -39,6 +39,19 @@ def test_share_bundle_excludes_proxies_and_raw(tmp_path: Path):
         encoding="utf-8",
     )
     (work_dir / "vir.monter.json").write_text("{}", encoding="utf-8")
+    (work_dir / "human-corrections.json").write_text(
+        json.dumps(
+            {
+                "schemaVersion": "human-corrections-0.1",
+                "projectId": "p1",
+                "createdAt": "2026-01-01T00:00:00Z",
+                "updatedAt": "2026-01-01T00:01:00Z",
+                "corrections": [],
+                "notes": [],
+            }
+        ),
+        encoding="utf-8",
+    )
     (work_dir / "rough-cut.mp4").write_bytes(b"preview")
     proxies = work_dir / "proxies"
     proxies.mkdir()
@@ -56,12 +69,14 @@ def test_share_bundle_excludes_proxies_and_raw(tmp_path: Path):
         assert "bundle-manifest.json" in names
         assert "project.monter.json" in names
         assert "vir.monter.json" in names
+        assert "human-corrections.json" in names
         assert "rough-cut.mp4" in names
         assert all(not name.startswith("proxies/") for name in names)
 
         manifest = json.loads(archive.read("bundle-manifest.json"))
         assert manifest["rawMediaIncluded"] is False
         assert manifest["proxiesIncluded"] is False
+        assert "human-corrections.json" in manifest["includedArtifacts"]
 
 
 def test_share_bundle_can_exclude_preview(tmp_path: Path):

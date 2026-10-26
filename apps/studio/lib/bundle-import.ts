@@ -14,6 +14,7 @@ const JSON_ARTIFACTS = [
   "ctl.json",
   "critic-report.json",
   "transition-opportunities.json",
+  "human-corrections.json",
   "production-report.json",
   "audio-analysis.json",
 ] as const;
