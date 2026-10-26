@@ -18,8 +18,12 @@ def discover_media(folder: Path) -> list[Path]:
     ]
 
 
+def relative_media_path(path: Path, source_root: Path) -> str:
+    return path.resolve().relative_to(source_root.resolve()).as_posix()
+
+
 def asset_id(path: Path, source_root: Path) -> str:
-    relative = path.resolve().relative_to(source_root.resolve()).as_posix()
+    relative = relative_media_path(path, source_root)
     return "asset_" + hashlib.blake2s(relative.encode("utf-8"), digest_size=8).hexdigest()
 
 
@@ -39,7 +43,7 @@ def ingest_project(
             MediaAsset(
                 id=asset_id(path, root),
                 filename=path.name,
-                source_path=str(path),
+                source_rel_path=relative_media_path(path, root),
                 source_size_bytes=path.stat().st_size,
                 duration_seconds=technical.duration_seconds,
                 width=technical.width,
@@ -50,6 +54,9 @@ def ingest_project(
             )
         )
 
-    project_seed = f"{root}|{project_name}".encode("utf-8")
+    stable_asset_fingerprint = "|".join(
+        f"{asset.source_rel_path}:{asset.source_size_bytes}" for asset in assets
+    )
+    project_seed = f"{project_name}|{stable_asset_fingerprint}".encode("utf-8")
     project_id = "project_" + hashlib.blake2s(project_seed, digest_size=8).hexdigest()
     return MonterProject.new(project_id, project_name, root, assets)
