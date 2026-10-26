@@ -26,6 +26,43 @@ function manifest(overrides: Record<string, unknown> = {}) {
   });
 }
 
+function opportunitiesJson() {
+  return JSON.stringify({
+    projectId: "project_test",
+    boundaries: [
+      {
+        boundaryIndex: 1,
+        leftSegmentId: "left",
+        rightSegmentId: "right",
+        outgoingHandleSeconds: 0.2,
+        incomingHandleSeconds: 0.2,
+        cutSignature: {
+          directionCompatibility: 1,
+          zoomCompatibility: 0.7,
+          phaseCompatibility: 0.6,
+          globalMotionConfidence: 0.8,
+          relationScore: 0.75,
+        },
+        recommendedMechanism: "directional_bridge",
+        candidates: [
+          {
+            mechanism: "hard_cut",
+            durationSeconds: 0,
+            requiredHandleSeconds: 0,
+            feasible: true,
+            feasibilityScore: 1,
+            motivationScore: 0.6,
+            relationScore: 0.75,
+            parameters: {},
+            reason: "fallback",
+          },
+        ],
+      },
+    ],
+    notes: [],
+  });
+}
+
 function bundleFile(entries: Record<string, Uint8Array>) {
   return new Blob([zipSync(entries)], { type: "application/zip" });
 }
@@ -43,6 +80,18 @@ describe("importMonterBundle", () => {
     expect(result.manifest.rawMediaIncluded).toBe(false);
     expect(result.preview?.type).toBe("video/mp4");
     expect(result.preview?.size).toBe(4);
+  });
+
+  it("loads transition opportunity reasoning from the bundle", async () => {
+    const file = bundleFile({
+      "bundle-manifest.json": strToU8(manifest({ includedArtifacts: ["project.monter.json", "transition-opportunities.json"] })),
+      "project.monter.json": strToU8(projectJson()),
+      "transition-opportunities.json": strToU8(opportunitiesJson()),
+    });
+
+    const result = await importMonterBundle(file);
+    expect(result.artifacts.transitionOpportunities?.boundaries).toHaveLength(1);
+    expect(result.artifacts.transitionOpportunities?.boundaries[0].recommendedMechanism).toBe("directional_bridge");
   });
 
   it("ignores unknown root entries instead of decompressing them", async () => {
