@@ -90,6 +90,7 @@ export type PostRenderRevisionReport = {
   baselineAutomaticCandidates: number;
   candidateAutomaticCandidates?: number | null;
   changedSegments: string[];
+  changedBoundaries?: number[];
   candidateDir?: string | null;
   baselineSnapshotDir?: string | null;
   promotedArtifacts: string[];
@@ -149,6 +150,9 @@ function parsePostRenderRevision(bytes: Uint8Array): PostRenderRevisionReport {
     || !Array.isArray(value.promotedArtifacts)
   ) {
     throw new Error("post-render-revision-report.json: invalid post-render revision report");
+  }
+  if (value.changedBoundaries !== undefined && !Array.isArray(value.changedBoundaries)) {
+    throw new Error("post-render-revision-report.json: invalid changedBoundaries");
   }
   return value as PostRenderRevisionReport;
 }

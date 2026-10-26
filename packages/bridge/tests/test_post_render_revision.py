@@ -83,6 +83,31 @@ def test_filter_passes_only_supported_automatic_editorial_findings():
     assert filtered.findings[0].segment_id == "s1"
 
 
+def test_filter_preserves_boundary_identity_for_motion_match_trim_realign():
+    source = editorial(findings=[CriticFinding(
+        code="motion_match_timing_weak",
+        severity="warning",
+        boundary_index=2,
+        message="recoverable boundary timing",
+    )])
+    consolidated = final(findings=[FinalCriticFinding(
+        code="motion_match_timing_weak",
+        domain="editorial",
+        severity="warning",
+        reviseability="automatic_candidate",
+        message="recoverable boundary timing",
+        source_artifact="critic-report.json",
+        boundary_index=2,
+    )])
+
+    filtered = filter_automatic_editorial_critic(source, consolidated)
+    assert filtered.status == "needs_revision"
+    assert len(filtered.findings) == 1
+    assert filtered.findings[0].code == "motion_match_timing_weak"
+    assert filtered.findings[0].boundary_index == 2
+    assert filtered.findings[0].segment_id is None
+
+
 def test_candidate_promotion_snapshots_baseline_and_ignores_stale_candidate_files(tmp_path: Path):
     work = tmp_path / ".monter"
     work.mkdir()

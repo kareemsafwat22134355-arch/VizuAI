@@ -1,6 +1,6 @@
-# MONTER v0.25 — Bounded Post-Render Revision
+# MONTER v0.25+ — Bounded Post-Render Revision
 
-v0.25 closes the first safe revision loop after MONTER has actually rendered and re-watched its output.
+v0.25 closes the first safe revision loop after MONTER has actually rendered and re-watched its output. v0.26 expands the deterministic revision vocabulary without relaxing the transaction safety rules.
 
 The rule is deliberately narrow:
 
@@ -27,19 +27,22 @@ A post-render edit attempt is allowed only when all of these are true:
 4. A final render and render re-analysis exist.
 5. The feature has not been disabled with `--no-post-render-revision`.
 
-The automatic candidate must also map to a finding code already supported by the deterministic revision engine:
+The automatic candidate must map to a finding code already supported by the deterministic revision engine:
 
 ```text
 energy_mismatch
 low_confidence_selection
 immediate_repetition
+motion_match_timing_weak
 ```
+
+`motion_match_timing_weak` is added in v0.26 and is constrained to bounded source-trim realignment on an existing `motion_match_cut`; it does not authorize changing a deliberate hard cut.
 
 Everything else remains manual-only.
 
 ## Why integrity failures block edit mutation
 
-If the MP4 has the wrong duration, is catastrophically blank, or has unsafe audio headroom, changing shot selection is not a valid repair strategy.
+If the MP4 has the wrong duration, is catastrophically blank, or has unsafe audio headroom, changing shot selection or trim timing is not a valid repair strategy.
 
 MONTER therefore refuses a post-render edit mutation whenever the Final Critic contains an integrity error.
 
@@ -82,7 +85,7 @@ The candidate is accepted only when:
 candidate final-critic-report.json status == pass
 ```
 
-A lower error number, fewer warnings, or a better energy metric is not enough by itself.
+A lower error number, fewer warnings, a better energy metric, or a higher motion-phase score is not enough by itself.
 
 This is intentionally conservative: MONTER must prove the revised candidate is physically valid and editorially passing before it becomes canonical.
 
@@ -126,6 +129,7 @@ It records:
 - baseline and candidate Final Critic statuses
 - automatic-candidate counts before/after
 - changed segment IDs
+- changed boundary indices (v0.26 additive field)
 - local candidate/baseline directory labels
 - promoted artifact names
 
@@ -137,7 +141,7 @@ Studio imports the transaction report with a project identity guard.
 
 ## Production report
 
-`production-report.json` now exposes:
+`production-report.json` exposes:
 
 ```text
 postRenderRevisionAttempted
@@ -145,7 +149,7 @@ postRenderRevisionAccepted
 postRenderRevisionCount
 ```
 
-`postRenderRevisionCount` is bounded to `0` or `1` in v0.25.
+`postRenderRevisionCount` remains bounded to `0` or `1`.
 
 ## CLI
 
@@ -159,7 +163,7 @@ monter produce RAW --no-post-render-revision
 
 ## Intentional limits
 
-v0.25 does not:
+The bounded post-render loop does not:
 
 - perform more than one post-render attempt,
 - revise render/audio integrity failures,
@@ -169,4 +173,4 @@ v0.25 does not:
 - compare semantic identity continuity between baseline and candidate,
 - or keep retrying until a score improves.
 
-The next safe expansion is to improve the deterministic revision vocabulary itself, then explicitly whitelist those new actions for post-render use.
+Every new automatic action must first exist as a deterministic revision operation, then be explicitly whitelisted by the Final Critic and transaction filter.

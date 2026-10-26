@@ -53,6 +53,26 @@ def test_final_critic_marks_supported_editorial_replacement_as_automatic_candida
     assert report.findings[0].reviseability == "automatic_candidate"
 
 
+def test_motion_match_timing_preserves_boundary_identity_as_automatic_candidate():
+    report = build_final_critic(editorial(
+        status="needs_revision",
+        findings=[CriticFinding(
+            code="motion_match_timing_weak",
+            severity="warning",
+            boundary_index=3,
+            message="bounded trim shift can improve phase timing",
+        )],
+    ))
+
+    finding = next(item for item in report.findings if item.code == "motion_match_timing_weak")
+    assert report.status == "needs_revision"
+    assert report.automatic_revision_candidates == 1
+    assert finding.domain == "editorial"
+    assert finding.reviseability == "automatic_candidate"
+    assert finding.boundary_index == 3
+    assert finding.segment_id is None
+
+
 def test_render_integrity_error_overrides_editorial_pass_and_remains_manual_only():
     render = render_report(
         status="needs_review",

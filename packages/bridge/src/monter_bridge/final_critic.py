@@ -9,6 +9,7 @@ AUTO_EDITORIAL_CODES = {
     "energy_mismatch",
     "low_confidence_selection",
     "immediate_repetition",
+    "motion_match_timing_weak",
 }
 
 
@@ -134,6 +135,6 @@ def build_final_critic(
         notes=[
             "The final critic keeps editorial, render-integrity, and audio-integrity evidence in separate domains instead of collapsing quality into one score.",
             "Only finding codes already supported by the deterministic edit revision engine are labeled automatic_candidate.",
-            "Render/audio integrity findings remain manual_only in v0.24; no edit mutation is attempted as a substitute for fixing a broken renderer or mix.",
+            "Render/audio integrity findings remain manual_only; no edit mutation is attempted as a substitute for fixing a broken renderer or mix.",
         ],
     )

@@ -34,6 +34,7 @@ AUTO_REVISION_CODES = {
     "energy_mismatch",
     "low_confidence_selection",
     "immediate_repetition",
+    "motion_match_timing_weak",
 }
 
 PROMOTABLE_ARTIFACTS = (
@@ -105,7 +106,7 @@ def filter_automatic_editorial_critic(
         metrics=editorial.metrics,
         findings=findings,
         notes=[
-            "Filtered post-render critic contains only editorial findings already supported by the deterministic replacement engine."
+            "Filtered post-render critic contains only editorial findings already supported by deterministic revision actions."
         ],
     )
 
@@ -176,7 +177,7 @@ def attempt_post_render_revision(
             ),
             baseline_final_status=baseline_final_critic.status,
             baseline_automatic_candidates=baseline_final_critic.automatic_revision_candidates,
-            notes=["v0.25 permits at most one post-render candidate attempt."],
+            notes=["At most one post-render candidate attempt is permitted."],
         ), None
 
     filtered = filter_automatic_editorial_critic(baseline_editorial_critic, baseline_final_critic)
@@ -186,6 +187,11 @@ def attempt_post_render_revision(
         for action in revision_report.actions
         if action.kind == "replace_segment" and action.segment_id is not None
     ]
+    changed_boundaries = [
+        action.boundary_index
+        for action in revision_report.actions
+        if action.kind == "realign_boundary" and action.boundary_index is not None
+    ]
     if not revision_report.changed:
         return PostRenderRevisionReport(
             project_id=project.project_id,
@@ -193,10 +199,11 @@ def attempt_post_render_revision(
             attempted=True,
             changed=False,
             accepted=False,
-            reason="Revision engine found no deterministic replacement that could satisfy the eligible final-critic finding(s).",
+            reason="Revision engine found no deterministic action that could satisfy the eligible final-critic finding(s).",
             baseline_final_status=baseline_final_critic.status,
             baseline_automatic_candidates=baseline_final_critic.automatic_revision_candidates,
             changed_segments=changed_segments,
+            changed_boundaries=changed_boundaries,
             notes=["No candidate render was created because the edit did not change."],
         ), None
 
@@ -313,11 +320,12 @@ def attempt_post_render_revision(
         baseline_automatic_candidates=baseline_final_critic.automatic_revision_candidates,
         candidate_automatic_candidates=candidate_final.automatic_revision_candidates,
         changed_segments=changed_segments,
+        changed_boundaries=changed_boundaries,
         candidate_dir=candidate_dir.name,
         baseline_snapshot_dir=baseline_dir.name if baseline_dir is not None else None,
         promoted_artifacts=promoted,
         notes=[
-            "v0.25 performs exactly one post-render edit candidate attempt.",
+            "Exactly one post-render edit candidate attempt is permitted.",
             "Render/audio integrity errors never authorize an edit mutation.",
             "Rejected candidates remain inspectable under post-render-candidate-01 while canonical artifacts stay unchanged.",
         ],
