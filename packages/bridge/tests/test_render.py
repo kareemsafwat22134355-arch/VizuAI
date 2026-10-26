@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from monter_bridge.ctl_models import CtlClip, CtlProgram, CtlTransition, TimeWarpIntent, TimeWarpSlice
+from monter_bridge.ctl_models import AudioBoundaryIntent, CtlClip, CtlProgram, CtlTransition, TimeWarpIntent, TimeWarpSlice
 from monter_bridge.models import MediaAsset, MonterProject
 from monter_bridge.render import render_command
 
@@ -61,3 +61,23 @@ def test_render_command_compiles_timewarp_slices_before_clip_concat():
     assert "setpts=(PTS-STARTPTS)/0.800000000" in joined
     assert "concat=n=3:v=1:a=0[base0]" in joined
     assert "[base0]scale=w=960:h=540" in joined
+
+
+def test_source_audio_l_cut_moves_audio_boundary_without_moving_video_cut():
+    ctl = fixture_ctl()
+    ctl.audio_boundaries = [AudioBoundaryIntent(boundary_index=1, mechanism="l_cut", offset_seconds=.2, reason="continuity")]
+    joined = " ".join(render_command(ctl, fixture_project(), Path("proxies"), Path("out.mp4"), use_source_audio=True))
+
+    assert "[0:a]atrim=start=0.500000:end=2.700000" in joined
+    assert "[1:a]atrim=start=1.200000:end=3.000000" in joined
+    assert "concat=n=2:v=0:a=1[sourceaudio]" in joined
+    assert "-map [aout]" in joined
+
+
+def test_source_audio_and_music_are_mixed_when_both_enabled():
+    joined = " ".join(render_command(
+        fixture_ctl(), fixture_project(), Path("proxies"), Path("out.mp4"), Path("music.wav"), use_source_audio=True
+    ))
+    assert "[sourceaudio]volume=0.420[srcmix]" in joined
+    assert "[2:a:0]atrim=0:4.000000" in joined
+    assert "amix=inputs=2:duration=first:normalize=0" in joined
