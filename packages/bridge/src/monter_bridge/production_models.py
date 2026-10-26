@@ -25,5 +25,8 @@ class ProductionReport(PortableModel):
     sound_non_sync_selected: int = Field(default=0, ge=0)
     audio_mix_audited: bool = False
     audio_mix_safe: bool | None = None
+    render_reanalysis_executed: bool = False
+    render_integrity_safe: bool | None = None
+    render_energy_alignment: float | None = Field(default=None, ge=0, le=1)
     artifacts: list[str]
     warnings: list[str] = Field(default_factory=list)

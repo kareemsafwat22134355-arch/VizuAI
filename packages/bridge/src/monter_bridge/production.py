@@ -18,6 +18,7 @@ from .planner import build_edit_plan
 from .production_models import ProductionReport
 from .proxy import create_project_proxies
 from .render import render_draft
+from .render_analysis import analyze_render
 from .revision import revise_edit_plan
 from .sound_director import build_sound_directed_audio_plan, direct_sound
 from .transition_opportunities import synthesize_transition_opportunities
@@ -42,6 +43,9 @@ def produce_project(
     run_sound_pass: bool = True,
     max_jl_cuts: int = 2,
     audio_safety_threshold_dbfs: float = -0.5,
+    run_render_reanalysis: bool = True,
+    render_analysis_sample_fps: float = 4.0,
+    render_analysis_width: int = 320,
 ) -> ProductionReport:
     if max_revision_iterations < 0 or max_revision_iterations > 4:
         raise ValueError("max_revision_iterations must be between 0 and 4")
@@ -53,6 +57,10 @@ def produce_project(
         raise ValueError("advanced_analysis_width must be >= 64")
     if max_jl_cuts < 0 or max_jl_cuts > 8:
         raise ValueError("max_jl_cuts must be between 0 and 8")
+    if render_analysis_sample_fps <= 0:
+        raise ValueError("render_analysis_sample_fps must be > 0")
+    if render_analysis_width < 64:
+        raise ValueError("render_analysis_width must be >= 64")
 
     work_dir.mkdir(parents=True, exist_ok=True)
     proxy_dir = work_dir / "proxies"
@@ -157,6 +165,11 @@ def produce_project(
     audio_mix_audited = False
     audio_mix_safe: bool | None = None
     mix_warning: str | None = None
+    render_reanalysis_executed = False
+    render_integrity_safe: bool | None = None
+    render_energy_alignment: float | None = None
+    render_findings: list[str] = []
+
     if render:
         output = work_dir / "rough-cut.mp4"
         render_draft(
@@ -179,6 +192,25 @@ def produce_project(
                     f"> threshold={audit.safety_threshold_dbfs:.1f} dBFS."
                 )
 
+        if run_render_reanalysis:
+            render_report = analyze_render(
+                output,
+                project_id=project.project_id,
+                expected_duration_seconds=edit.actual_duration_seconds,
+                director_plan=director,
+                sample_fps=render_analysis_sample_fps,
+                analysis_width=min(render_analysis_width, width),
+            )
+            write_model(work_dir / "render-analysis.json", render_report)
+            render_reanalysis_executed = True
+            render_integrity_safe = render_report.status == "pass"
+            render_energy_alignment = render_report.energy_alignment
+            render_findings = [
+                f"Render re-analysis [{finding.severity}] {finding.message}"
+                for finding in render_report.findings
+                if finding.severity in {"warning", "error"}
+            ]
+
     artifacts = [
         "project.monter.json",
         "vir.monter.json",
@@ -200,13 +232,20 @@ def produce_project(
         artifacts.append("rough-cut.mp4")
     if audio_mix_audited:
         artifacts.append("audio-mix-audit.json")
+    if render_reanalysis_executed:
+        artifacts.append("render-analysis.json")
 
     warnings = list(vir.warnings)
     warnings.extend(finding.message for finding in critic.findings if finding.severity == "error")
     if mix_warning:
         warnings.append(mix_warning)
+    warnings.extend(render_findings)
 
-    production_passed = critic.status == "pass" and audio_mix_safe is not False
+    production_passed = (
+        critic.status == "pass"
+        and audio_mix_safe is not False
+        and render_integrity_safe is not False
+    )
     report = ProductionReport(
         project_id=project.project_id,
         status="pass" if production_passed else "needs_review",
@@ -223,6 +262,9 @@ def produce_project(
         sound_non_sync_selected=sound_non_sync_selected,
         audio_mix_audited=audio_mix_audited,
         audio_mix_safe=audio_mix_safe,
+        render_reanalysis_executed=render_reanalysis_executed,
+        render_integrity_safe=render_integrity_safe,
+        render_energy_alignment=render_energy_alignment,
         artifacts=artifacts,
         warnings=warnings,
     )
