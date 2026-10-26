@@ -20,6 +20,7 @@ class PostRenderRevisionReport(PortableModel):
     baseline_automatic_candidates: int = Field(default=0, ge=0)
     candidate_automatic_candidates: int | None = Field(default=None, ge=0)
     changed_segments: list[str] = Field(default_factory=list)
+    changed_boundaries: list[int] = Field(default_factory=list)
     candidate_dir: str | None = None
     baseline_snapshot_dir: str | None = None
     promoted_artifacts: list[str] = Field(default_factory=list)
