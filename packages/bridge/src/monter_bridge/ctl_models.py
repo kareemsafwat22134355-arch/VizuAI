@@ -37,11 +37,31 @@ class CtlTransition(PortableModel):
     reason: str
 
 
+class TimeWarpSlice(PortableModel):
+    source_in_seconds: float = Field(ge=0)
+    source_out_seconds: float = Field(gt=0)
+    playback_rate: float = Field(gt=0.05, le=8)
+
+    @model_validator(mode="after")
+    def validate_range(self) -> "TimeWarpSlice":
+        if self.source_out_seconds <= self.source_in_seconds:
+            raise ValueError("timewarp slice must have positive duration")
+        return self
+
+
+class TimeWarpIntent(PortableModel):
+    segment_id: str
+    anchor_seconds: float = Field(ge=0)
+    reason: str
+    slices: list[TimeWarpSlice] = Field(min_length=2)
+
+
 class CtlProgram(PortableModel):
     schema_version: str = CTL_SCHEMA_VERSION
     project_id: str
     duration_seconds: float = Field(gt=0)
     clips: list[CtlClip]
     transitions: list[CtlTransition]
+    time_warps: list[TimeWarpIntent] = Field(default_factory=list)
     render_fps: int = Field(default=24, ge=1, le=120)
     render_width: int = Field(default=960, ge=320)

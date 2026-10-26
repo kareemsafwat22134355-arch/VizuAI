@@ -4,6 +4,7 @@ from .analysis_models import VirProject
 from .ctl_models import CtlClip, CtlProgram, CtlTransition
 from .cut_signature import build_cut_signature
 from .planning_models import EditPlan
+from .timewarp import select_timewarp_intents
 
 
 def compile_ctl(edit_plan: EditPlan, vir: VirProject, fps: int = 24, width: int = 960) -> CtlProgram:
@@ -43,16 +44,9 @@ def compile_ctl(edit_plan: EditPlan, vir: VirProject, fps: int = 24, width: int 
             "rightDirection": right_shot.global_motion.dominant_screen_direction,
         }
 
-        if (
-            signature.direction_compatibility >= 0.9
-            and signature.global_motion_confidence >= 0.35
-            and signature.relation_score >= 0.55
-        ):
+        if signature.direction_compatibility >= 0.9 and signature.global_motion_confidence >= 0.35 and signature.relation_score >= 0.55:
             mechanism = "motion_match_cut"
-            reason = (
-                "Outgoing and incoming shots share a confident global screen-motion direction; "
-                "use that physical continuity rather than adding a decorative transition."
-            )
+            reason = "Adjacent shots share a confident global screen-motion direction; the cut itself carries the transition."
         elif signature.phase_compatibility >= 0.6:
             mechanism = "motion_peak_cut"
             reason = "The boundary is aligned to a measured action phase even without a confident global direction match."
@@ -74,6 +68,7 @@ def compile_ctl(edit_plan: EditPlan, vir: VirProject, fps: int = 24, width: int 
         duration_seconds=edit_plan.actual_duration_seconds,
         clips=clips,
         transitions=transitions,
+        time_warps=select_timewarp_intents(edit_plan, vir, max_intents=2),
         render_fps=fps,
         render_width=width,
     )

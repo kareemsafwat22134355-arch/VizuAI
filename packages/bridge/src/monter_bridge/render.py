@@ -3,9 +3,44 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from .ctl_models import CtlProgram
+from .ctl_models import CtlProgram, TimeWarpIntent
 from .models import MonterProject
 from .proxy import proxy_path_for
+
+
+def _video_filters_for_clip(
+    input_index: int,
+    clip,
+    warp: TimeWarpIntent | None,
+    width: int,
+    height: int,
+    fps: int,
+) -> list[str]:
+    filters: list[str] = []
+    source_label = f"base{input_index}"
+
+    if warp is None:
+        filters.append(
+            f"[{input_index}:v]trim=start={clip.source_in_seconds:.6f}:end={clip.source_out_seconds:.6f},"
+            f"setpts=PTS-STARTPTS[{source_label}]"
+        )
+    else:
+        slice_labels: list[str] = []
+        for slice_index, slice_ in enumerate(warp.slices):
+            label = f"tw{input_index}_{slice_index}"
+            slice_labels.append(f"[{label}]")
+            filters.append(
+                f"[{input_index}:v]trim=start={slice_.source_in_seconds:.6f}:end={slice_.source_out_seconds:.6f},"
+                f"setpts=(PTS-STARTPTS)/{slice_.playback_rate:.9f}[{label}]"
+            )
+        filters.append("".join(slice_labels) + f"concat=n={len(slice_labels)}:v=1:a=0[{source_label}]")
+
+    filters.append(
+        f"[{source_label}]scale=w={width}:h={height}:force_original_aspect_ratio=decrease,"
+        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,"
+        f"fps={fps},format=yuv420p[v{input_index}]"
+    )
+    return filters
 
 
 def render_command(
@@ -25,8 +60,7 @@ def render_command(
         asset = assets.get(clip.asset_id)
         if asset is None:
             raise ValueError(f"CTL references unknown asset: {clip.asset_id}")
-        proxy = proxy_path_for(asset, proxy_dir)
-        command.extend(["-i", str(proxy)])
+        command.extend(["-i", str(proxy_path_for(asset, proxy_dir))])
 
     music_index: int | None = None
     if music:
@@ -34,18 +68,19 @@ def render_command(
         command.extend(["-stream_loop", "-1", "-i", str(music)])
 
     height = max(180, round(ctl.render_width * 9 / 16))
+    warp_by_segment = {warp.segment_id: warp for warp in ctl.time_warps}
     filters: list[str] = []
     labels: list[str] = []
     for index, clip in enumerate(ctl.clips):
-        label = f"v{index}"
-        labels.append(f"[{label}]")
-        filters.append(
-            f"[{index}:v]trim=start={clip.source_in_seconds:.6f}:end={clip.source_out_seconds:.6f},"
-            f"setpts=PTS-STARTPTS,"
-            f"scale=w={ctl.render_width}:h={height}:force_original_aspect_ratio=decrease,"
-            f"pad={ctl.render_width}:{height}:(ow-iw)/2:(oh-ih)/2,"
-            f"fps={ctl.render_fps},format=yuv420p[{label}]"
-        )
+        filters.extend(_video_filters_for_clip(
+            index,
+            clip,
+            warp_by_segment.get(clip.id),
+            ctl.render_width,
+            height,
+            ctl.render_fps,
+        ))
+        labels.append(f"[v{index}]")
     filters.append("".join(labels) + f"concat=n={len(labels)}:v=1:a=0[vout]")
 
     command.extend(["-filter_complex", ";".join(filters), "-map", "[vout]"])
