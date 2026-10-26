@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
 from .models import MediaAsset, MonterProject
+
+PROXY_CACHE_VERSION = 1
 
 
 def proxy_command(source: Path, destination: Path, width: int = 960, fps: int = 24) -> list[str]:
@@ -20,6 +23,32 @@ def proxy_command(source: Path, destination: Path, width: int = 960, fps: int = 
     ]
 
 
+def proxy_metadata_path(destination: Path) -> Path:
+    return destination.with_suffix(destination.suffix + ".meta.json")
+
+
+def proxy_fingerprint(source: Path, width: int, fps: int) -> dict[str, int]:
+    stat = source.stat()
+    return {
+        "cacheVersion": PROXY_CACHE_VERSION,
+        "sourceSizeBytes": stat.st_size,
+        "sourceMtimeNs": stat.st_mtime_ns,
+        "width": width,
+        "fps": fps,
+    }
+
+
+def proxy_is_fresh(source: Path, destination: Path, width: int, fps: int) -> bool:
+    metadata_path = proxy_metadata_path(destination)
+    if not destination.exists() or not metadata_path.exists():
+        return False
+    try:
+        stored = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return stored == proxy_fingerprint(source, width, fps)
+
+
 def create_proxy(
     source: Path,
     destination: Path,
@@ -28,9 +57,14 @@ def create_proxy(
     skip_if_fresh: bool = True,
 ) -> bool:
     destination.parent.mkdir(parents=True, exist_ok=True)
-    if skip_if_fresh and destination.exists() and destination.stat().st_mtime >= source.stat().st_mtime:
+    if skip_if_fresh and proxy_is_fresh(source, destination, width, fps):
         return False
+
     subprocess.run(proxy_command(source, destination, width, fps), check=True)
+    proxy_metadata_path(destination).write_text(
+        json.dumps(proxy_fingerprint(source, width, fps), indent=2),
+        encoding="utf-8",
+    )
     return True
 
 

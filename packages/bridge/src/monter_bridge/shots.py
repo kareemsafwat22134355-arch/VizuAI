@@ -21,10 +21,10 @@ def detect_shots(video_path: Path, adaptive_threshold: float = 3.0, min_scene_le
     scenes = manager.get_scene_list(start_in_scene=True)
 
     if not scenes:
-        duration = video.duration.get_seconds()
+        duration = video.duration.seconds
         return [TimeRange(start_seconds=0.0, end_seconds=max(0.0, duration))]
 
     return [
-        TimeRange(start_seconds=start.get_seconds(), end_seconds=end.get_seconds())
+        TimeRange(start_seconds=start.seconds, end_seconds=end.seconds)
         for start, end in scenes
     ]

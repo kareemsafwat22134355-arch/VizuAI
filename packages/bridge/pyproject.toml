@@ -1,6 +1,6 @@
 [project]
 name = "monter-bridge"
-version = "0.7.0"
+version = "0.8.0"
 description = "8GB-RAM-first local cinematic intelligence bridge for MONTER"
 requires-python = ">=3.11"
 dependencies = [
@@ -19,6 +19,8 @@ dev = ["pytest>=8.3,<9"]
 
 [project.scripts]
 monter = "monter_bridge.cli:main"
+monter-doctor = "monter_bridge.doctor:main"
+monter-bundle = "monter_bridge.bundle:main"
 
 [build-system]
 requires = ["setuptools>=75"]
