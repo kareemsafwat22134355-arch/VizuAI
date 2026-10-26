@@ -45,9 +45,9 @@ def _make_clip(path: Path, lavfi_source: str, duration: float = 2.4) -> None:
 def test_produce_real_media_end_to_end(tmp_path: Path):
     raw = tmp_path / "RAW"
     raw.mkdir()
-    _make_clip(raw / "01_static.mp4", "color=c=0x20242a:size=160x90:rate=12")
-    _make_clip(raw / "02_motion.mp4", "testsrc2=size=160x90:rate=12")
-    _make_clip(raw / "03_pattern.mp4", "testsrc=size=160x90:rate=12")
+    _make_clip(raw / "01_static.mp4", "color=c=0x20242a:size=320x180:rate=12")
+    _make_clip(raw / "02_motion.mp4", "testsrc2=size=320x180:rate=12")
+    _make_clip(raw / "03_pattern.mp4", "testsrc=size=320x180:rate=12")
 
     work = tmp_path / ".monter"
     report = produce_project(
@@ -55,7 +55,7 @@ def test_produce_real_media_end_to_end(tmp_path: Path):
         project_name="E2E Fixture",
         work_dir=work,
         duration=4.0,
-        width=160,
+        width=320,
         fps=12,
         max_revision_iterations=1,
         render=True,
