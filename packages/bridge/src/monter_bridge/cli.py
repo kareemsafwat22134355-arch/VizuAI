@@ -28,22 +28,22 @@ def add_plan_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--music", default=None, help="optional music track for beat/onset analysis")
 
 
+def optional_project(path: str):
+    manifest = Path(path)
+    return load_project(manifest) if manifest.exists() else None
+
+
 def write_planning_outputs(vir_path: Path, out_dir: Path, duration: float, music: str | None):
     vir = load_vir(vir_path)
     director = default_director_plan(duration)
     audio = analyze_audio(Path(music)) if music else None
     edit_plan = build_edit_plan(vir, director, audio)
-
     out_dir.mkdir(parents=True, exist_ok=True)
     write_model(out_dir / "director-plan.json", director)
     write_model(out_dir / "edit-plan.json", edit_plan)
     if audio:
         write_model(out_dir / "audio-analysis.json", audio)
-
-    print(
-        f"Edit plan ready: {len(edit_plan.segments)} segments, "
-        f"{edit_plan.actual_duration_seconds:.2f}s actual / {duration:.2f}s target"
-    )
+    print(f"Edit plan ready: {len(edit_plan.segments)} segments, {edit_plan.actual_duration_seconds:.2f}s actual / {duration:.2f}s target")
     return edit_plan
 
 
@@ -75,6 +75,7 @@ def main() -> None:
     compile_parser = sub.add_parser("compile", help="compile an edit plan into validated CTL")
     compile_parser.add_argument("--edit-plan", default=".monter/edit-plan.json")
     compile_parser.add_argument("--vir", default=".monter/vir.monter.json")
+    compile_parser.add_argument("--manifest", default=".monter/project.monter.json")
     compile_parser.add_argument("--out", default=".monter/ctl.json")
     add_shared_media_args(compile_parser)
 
@@ -88,6 +89,7 @@ def main() -> None:
     revise_parser.add_argument("--edit-plan", default=".monter/edit-plan.json")
     revise_parser.add_argument("--ctl", default=".monter/ctl.json")
     revise_parser.add_argument("--vir", default=".monter/vir.monter.json")
+    revise_parser.add_argument("--manifest", default=".monter/project.monter.json")
     revise_parser.add_argument("--out-dir", default=".monter")
     add_shared_media_args(revise_parser)
 
@@ -96,6 +98,7 @@ def main() -> None:
     render_parser.add_argument("--ctl", default=".monter/ctl.json")
     render_parser.add_argument("--proxy-dir", default=".monter/proxies")
     render_parser.add_argument("--music", default=None)
+    render_parser.add_argument("--source-audio", action="store_true", help="mix retimed source sound and honor CTL J/L boundaries")
     render_parser.add_argument("--out", default=".monter/rough-cut.mp4")
 
     otio_parser = sub.add_parser("export-otio", help="export the edit plan as OpenTimelineIO")
@@ -148,9 +151,9 @@ def main() -> None:
     if args.command == "compile":
         edit_plan = load_edit_plan(Path(args.edit_plan))
         vir = load_vir(Path(args.vir))
-        ctl = compile_ctl(edit_plan, vir, fps=args.fps, width=args.width)
+        ctl = compile_ctl(edit_plan, vir, fps=args.fps, width=args.width, project=optional_project(args.manifest))
         write_model(Path(args.out), ctl)
-        print(f"CTL ready: {len(ctl.clips)} clips, {len(ctl.transitions)} boundaries -> {args.out}")
+        print(f"CTL ready: {len(ctl.clips)} clips, {len(ctl.transitions)} picture boundaries, {len(ctl.audio_boundaries)} audio offsets -> {args.out}")
         return
 
     if args.command == "critique":
@@ -166,12 +169,13 @@ def main() -> None:
         edit_plan = load_edit_plan(Path(args.edit_plan))
         ctl = load_ctl(Path(args.ctl))
         vir = load_vir(Path(args.vir))
+        project = optional_project(args.manifest)
         critic = critique_edit(edit_plan, ctl, vir)
         revised, revision = revise_edit_plan(edit_plan, vir, critic)
         out_dir = Path(args.out_dir)
         write_model(out_dir / "revision-report.json", revision)
         write_model(out_dir / "edit-plan.json", revised)
-        revised_ctl = compile_ctl(revised, vir, fps=args.fps, width=args.width)
+        revised_ctl = compile_ctl(revised, vir, fps=args.fps, width=args.width, project=project)
         write_model(out_dir / "ctl.json", revised_ctl)
         revised_critic = critique_edit(revised, revised_ctl, vir)
         write_model(out_dir / "critic-report.json", revised_critic)
@@ -181,7 +185,7 @@ def main() -> None:
     if args.command == "render":
         project = load_project(Path(args.manifest))
         ctl = load_ctl(Path(args.ctl))
-        render_draft(ctl, project, Path(args.proxy_dir), Path(args.out), Path(args.music) if args.music else None)
+        render_draft(ctl, project, Path(args.proxy_dir), Path(args.out), Path(args.music) if args.music else None, use_source_audio=args.source_audio)
         print(f"Draft rendered -> {args.out}")
         return
 
@@ -194,20 +198,11 @@ def main() -> None:
 
     if args.command == "produce":
         report = produce_project(
-            source_root=Path(args.folder),
-            project_name=args.name,
-            work_dir=Path(args.work_dir),
-            music=Path(args.music) if args.music else None,
-            duration=args.duration,
-            width=args.width,
-            fps=args.fps,
-            max_revision_iterations=args.max_revisions,
-            render=not args.no_render,
+            source_root=Path(args.folder), project_name=args.name, work_dir=Path(args.work_dir),
+            music=Path(args.music) if args.music else None, duration=args.duration, width=args.width, fps=args.fps,
+            max_revision_iterations=args.max_revisions, render=not args.no_render,
         )
-        print(
-            f"Production {report.status}: {report.assets_ingested} assets, {report.shots_analyzed} shots, "
-            f"{report.edit_segments} edit segments, {report.revision_iterations} revision iteration(s)"
-        )
+        print(f"Production {report.status}: {report.assets_ingested} assets, {report.shots_analyzed} shots, {report.edit_segments} edit segments, {report.revision_iterations} revision iteration(s)")
         return
 
     if args.command == "prepare":
@@ -217,7 +212,6 @@ def main() -> None:
         manifest_path = work_dir / "project.monter.json"
         proxy_dir = work_dir / "proxies"
         vir_path = work_dir / "vir.monter.json"
-
         project = ingest_project(source_root, args.name)
         create_project_proxies(project, source_root, proxy_dir, width=args.width, fps=args.fps)
         write_model(manifest_path, project)
@@ -225,9 +219,9 @@ def main() -> None:
         write_model(vir_path, vir)
         print(f"Prepared media: {project.project_name}: {len(project.assets)} assets, {len(vir.shots)} shots, {len(vir.warnings)} warnings")
         edit_plan = write_planning_outputs(vir_path, work_dir, args.duration, args.music)
-        ctl = compile_ctl(edit_plan, vir, fps=args.fps, width=args.width)
+        ctl = compile_ctl(edit_plan, vir, fps=args.fps, width=args.width, project=project)
         write_model(work_dir / "ctl.json", ctl)
-        print(f"CTL ready: {len(ctl.clips)} clips, {len(ctl.transitions)} boundaries")
+        print(f"CTL ready: {len(ctl.clips)} clips, {len(ctl.transitions)} picture boundaries, {len(ctl.audio_boundaries)} audio offsets")
 
 
 if __name__ == "__main__":
