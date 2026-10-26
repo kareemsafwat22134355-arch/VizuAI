@@ -72,12 +72,21 @@ def test_produce_real_media_end_to_end(tmp_path: Path):
         "edit-plan.json",
         "ctl.json",
         "critic-report.json",
+        "transition-opportunities.json",
         "production-report.json",
         "edit.otio",
         "rough-cut.mp4",
     }
     assert expected.issubset({path.name for path in work.iterdir() if path.is_file()})
     assert (work / "rough-cut.mp4").stat().st_size > 0
+
+    opportunities = json.loads((work / "transition-opportunities.json").read_text(encoding="utf-8"))
+    assert opportunities["projectId"] == report.project_id
+    assert len(opportunities["boundaries"]) == max(0, report.edit_segments - 1)
+    assert all(
+        any(candidate["mechanism"] == "hard_cut" for candidate in boundary["candidates"])
+        for boundary in opportunities["boundaries"]
+    )
 
     manifest = json.loads((work / "project.monter.json").read_text(encoding="utf-8"))
     assert len(manifest["assets"]) == 3
@@ -97,5 +106,6 @@ def test_produce_real_media_end_to_end(tmp_path: Path):
     with zipfile.ZipFile(bundle) as archive:
         names = archive.namelist()
         assert "project.monter.json" in names
+        assert "transition-opportunities.json" in names
         assert "rough-cut.mp4" in names
         assert all(not name.startswith("proxies/") for name in names)
