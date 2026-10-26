@@ -110,7 +110,7 @@ The resulting `edit-plan.json` records the baseline segment count, style-adjuste
 
 ## Transition opportunities before effects
 
-MONTER does not turn every cut into an effect. Before a non-zero transition can exist, the system now creates a separate feasibility report for every edit boundary:
+MONTER does not turn every cut into an effect. Before a non-zero transition can exist, the system creates a separate feasibility report for every edit boundary:
 
 ```bash
 monter-transition-opportunities \
@@ -125,12 +125,22 @@ For every boundary the report stores the `CutSignature`, available handles, cand
 
 The Studio reads the same artifact from `.monter.zip` and exposes the recommendation plus all feasible/blocked candidates boundary-by-boundary. This makes transition reasoning inspectable before expensive effects are compiled.
 
-**Important:** v0.12 is the synthesis/feasibility layer. `directional_bridge` and `zoom_bridge` are recommendations only at this stage; the deterministic renderer does not yet execute non-zero bridge primitives. This separation is intentional so MONTER never claims an effect was rendered when only the idea was validated.
+## Deterministic directional bridge compiler
+
+v0.13 promotes one non-zero opportunity into a reproducible render primitive: `directional_bridge`.
+
+When two adjacent shots share a confident cardinal screen-motion direction and the opportunity report verifies enough source handles, CTL v0.2 compiles a short directional bridge. The renderer borrows half of the bridge duration from the outgoing source handle and half from the incoming source handle, then overlaps those expanded clips for exactly the bridge duration. The added source time and the overlap cancel each other, so the final movie keeps the exact EditPlan duration instead of shrinking the timeline.
+
+The renderer maps the measured screen direction to a deterministic FFmpeg slide transition (`slideleft`, `slideright`, `slideup`, or `slidedown`). It normalizes frame size, fps, pixel format, and timebase before composition and checks for duration drift before launching the final encode.
+
+A non-zero bridge is **not** compiled when either adjacent segment has an event-driven timewarp. In that case CTL records the deferral reason and falls back to the existing zero-duration `motion_match_cut`, `motion_peak_cut`, or `hard_cut`. This avoids combining two temporal transformations until their joint timing semantics are explicitly supported.
+
+`zoom_bridge` remains a scored opportunity only in v0.13; it is not yet a renderer primitive. Older `ctl-0.1` bundles remain readable in Studio while new renders emit `ctl-0.2`.
 
 The current baseline uses PySceneDetect, low-resolution streaming OpenCV optical flow, librosa audio analysis, typed CTL, FFmpeg draft rendering and OpenTimelineIO export. The critic keeps quality dimensions separate and can run a bounded targeted revision loop instead of endlessly regenerating the edit.
 
 ## Testing rule
 
-Every pull request must pass Studio tests/build plus Bridge unit tests and a real-media smoke test before it is considered merge-ready. The Bridge smoke test generates actual video clips with FFmpeg and runs the CINEMA-0 pipeline through proxying, analysis, planning, CTL, critique, transition-opportunity synthesis, OTIO export, rendering, and portable bundle creation. The Video Microscope also has a real-media smoke test that generates a finished edit with hard cuts and verifies that its shot/cut analysis runs on actual encoded video.
+Every pull request must pass Studio tests/build plus Bridge unit tests and real-media smoke coverage before it is considered merge-ready. The Bridge smoke test generates actual video clips with FFmpeg and runs the CINEMA-0 pipeline through proxying, analysis, planning, CTL, critique, transition-opportunity synthesis, OTIO export, rendering, and portable bundle creation. The directional bridge has its own encoded-media test that renders a real FFmpeg transition and verifies with `ffprobe` that the final duration does not shrink. The Video Microscope also has a real-media smoke test that generates a finished edit with hard cuts and verifies that its shot/cut analysis runs on actual encoded video.
 
 See `docs/ARCHITECTURE.md` and `docs/OPEN_SOURCE.md`.
