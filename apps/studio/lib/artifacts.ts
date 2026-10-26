@@ -81,6 +81,41 @@ export type CtlProgram = {
   renderWidth: number;
 };
 
+export type TransitionCandidate = {
+  mechanism: "hard_cut" | "action_cut" | "directional_bridge" | "zoom_bridge";
+  durationSeconds: number;
+  requiredHandleSeconds: number;
+  feasible: boolean;
+  feasibilityScore: number;
+  motivationScore: number;
+  relationScore: number;
+  parameters: Record<string, string | number | boolean>;
+  reason: string;
+};
+
+export type BoundaryTransitionOpportunity = {
+  boundaryIndex: number;
+  leftSegmentId: string;
+  rightSegmentId: string;
+  outgoingHandleSeconds: number;
+  incomingHandleSeconds: number;
+  cutSignature: {
+    directionCompatibility: number;
+    zoomCompatibility: number;
+    phaseCompatibility: number;
+    globalMotionConfidence: number;
+    relationScore: number;
+  };
+  recommendedMechanism: TransitionCandidate["mechanism"];
+  candidates: TransitionCandidate[];
+};
+
+export type TransitionOpportunityReport = {
+  projectId: string;
+  boundaries: BoundaryTransitionOpportunity[];
+  notes: string[];
+};
+
 export type CriticReport = {
   projectId: string;
   status: "pass" | "needs_revision";
@@ -108,6 +143,7 @@ export type ArtifactBundle = {
   director?: DirectorPlan;
   edit?: EditPlan;
   ctl?: CtlProgram;
+  transitionOpportunities?: TransitionOpportunityReport;
   critic?: CriticReport;
   production?: ProductionReport;
 };
@@ -139,6 +175,10 @@ export function parseArtifact(filename: string, value: unknown): Partial<Artifac
     if (value.schemaVersion !== "ctl-0.1" || !Array.isArray(value.transitions)) throw new Error(`${filename}: invalid CTL`);
     return { ctl: value as CtlProgram };
   }
+  if (filename.endsWith("transition-opportunities.json")) {
+    if (!Array.isArray(value.boundaries) || typeof value.projectId !== "string") throw new Error(`${filename}: invalid transition opportunity report`);
+    return { transitionOpportunities: value as TransitionOpportunityReport };
+  }
   if (filename.endsWith("critic-report.json")) {
     if (!Array.isArray(value.metrics) || !Array.isArray(value.findings)) throw new Error(`${filename}: invalid critic report`);
     return { critic: value as CriticReport };
@@ -153,7 +193,15 @@ export function parseArtifact(filename: string, value: unknown): Partial<Artifac
 export function mergeArtifacts(current: ArtifactBundle, filename: string, value: unknown): ArtifactBundle {
   const patch = parseArtifact(filename, value);
   const next = { ...current, ...patch };
-  const ids = [next.project?.projectId, next.vir?.projectId, next.edit?.projectId, next.ctl?.projectId, next.critic?.projectId, next.production?.projectId].filter(Boolean);
+  const ids = [
+    next.project?.projectId,
+    next.vir?.projectId,
+    next.edit?.projectId,
+    next.ctl?.projectId,
+    next.transitionOpportunities?.projectId,
+    next.critic?.projectId,
+    next.production?.projectId,
+  ].filter(Boolean);
   if (new Set(ids).size > 1) throw new Error(`${filename}: projectId does not match the currently loaded bundle`);
   return next;
 }
