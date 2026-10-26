@@ -1,4 +1,4 @@
-# MONTER v0.24 — Final Critic
+# MONTER v0.24+ — Final Critic
 
 The CINEMA-0 loop should not finish with separate islands of evidence.
 
@@ -8,19 +8,20 @@ Before v0.24, MONTER had:
 - a post-encode `render-analysis.json`,
 - and an optional `audio-mix-audit.json`.
 
-`final-critic-report.json` now consolidates those sources while preserving their domains and keeping reviseability explicit.
+`final-critic-report.json` consolidates those sources while preserving their domains and keeping reviseability explicit.
 
 ## Why another critic artifact?
 
-A render-integrity failure is not the same kind of problem as a weak shot selection.
+A render-integrity failure is not the same kind of problem as a weak shot selection or recoverable cut timing.
 
 For example:
 
 ```text
 energy_mismatch
+motion_match_timing_weak
 ```
 
-may be addressable by replacing a segment with another analyzed shot.
+may be addressable by a deterministic edit action.
 
 But:
 
@@ -67,7 +68,7 @@ not_applicable
 
 ## Automatic-candidate policy
 
-v0.24 is intentionally strict.
+The policy remains intentionally strict.
 
 Only editorial finding codes already supported by the deterministic revision engine are marked `automatic_candidate`:
 
@@ -75,11 +76,12 @@ Only editorial finding codes already supported by the deterministic revision eng
 energy_mismatch
 low_confidence_selection
 immediate_repetition
+motion_match_timing_weak
 ```
 
-This does **not** mean v0.24 automatically executes another revision after rendering. It means the final critic can safely identify which findings are candidates for a future bounded second-pass loop.
+The first three are segment-replacement actions. `motion_match_timing_weak`, added in v0.26, is a bounded source-trim realignment action and preserves timeline duration.
 
-Everything else remains `manual_only` unless a real deterministic fix contract is implemented.
+Everything else remains `manual_only` unless a real deterministic fix contract is implemented and explicitly whitelisted.
 
 ## Status semantics
 
@@ -124,7 +126,7 @@ MONTER still does not collapse these into a single quality score.
 
 ## Production integration
 
-A full run now follows:
+A full run follows:
 
 ```text
 EDIT / CTL CRITIC
@@ -132,10 +134,11 @@ EDIT / CTL CRITIC
   -> AUDIO MIX AUDIT
   -> RENDER RE-ANALYSIS
   -> FINAL CRITIC
+  -> OPTIONAL BOUNDED POST-RENDER REVISION
   -> PRODUCTION REPORT
 ```
 
-`production-report.json` derives its overall pass/review state from the Final Critic.
+`production-report.json` derives its overall pass/review state from the canonical Final Critic.
 
 The earlier `critic-report.json` remains in the project because it is still useful pre-render editorial evidence and revision input.
 
@@ -147,13 +150,13 @@ Studio imports it as typed evidence and rejects it if its `projectId` does not m
 
 ## Intentional limits
 
-v0.24 does not yet:
+The Final Critic does not:
 
-- automatically run a second edit revision after rendering,
 - claim that render warnings are edit-fixable,
 - map renderer failures to code patches,
 - measure semantic continuity,
 - judge logo/text readability,
-- or infer a single aesthetic score.
+- infer a single aesthetic score,
+- or automatically grant reviseability to a newly invented finding code.
 
-The next safe step is a **bounded post-render revision policy** that may act only on `automatic_candidate` editorial findings and must re-render/re-analyze before accepting the revision.
+Every automatic finding must map to a deterministic edit action and remain subject to the single-candidate post-render transaction gate.
