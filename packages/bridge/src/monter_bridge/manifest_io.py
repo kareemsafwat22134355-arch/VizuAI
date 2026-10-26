@@ -1,18 +1,20 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TypeVar
 
 import orjson
 from pydantic import BaseModel
 
+from .analysis_models import VirProject
 from .models import MonterProject
-
-ModelT = TypeVar("ModelT", bound=BaseModel)
 
 
 def load_project(path: Path) -> MonterProject:
     return MonterProject.model_validate(orjson.loads(path.read_bytes()))
+
+
+def load_vir(path: Path) -> VirProject:
+    return VirProject.model_validate(orjson.loads(path.read_bytes()))
 
 
 def write_model(path: Path, model: BaseModel) -> None:
