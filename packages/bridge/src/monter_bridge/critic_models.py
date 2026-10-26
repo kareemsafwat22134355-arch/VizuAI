@@ -8,7 +8,13 @@ from .models import PortableModel
 
 Severity = Literal["info", "warning", "error"]
 CriticStatus = Literal["pass", "needs_revision"]
-RevisionKind = Literal["replace_segment", "review_duration", "review_transition", "review_analysis"]
+RevisionKind = Literal[
+    "replace_segment",
+    "realign_boundary",
+    "review_duration",
+    "review_transition",
+    "review_analysis",
+]
 
 
 class CriticMetric(PortableModel):
@@ -38,8 +44,11 @@ class RevisionAction(PortableModel):
     kind: RevisionKind
     reason: str
     segment_id: str | None = None
+    boundary_index: int | None = None
     from_shot_id: str | None = None
     to_shot_id: str | None = None
+    left_shift_seconds: float | None = None
+    right_shift_seconds: float | None = None
 
 
 class RevisionReport(PortableModel):
