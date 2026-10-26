@@ -5,15 +5,15 @@ export const sampleProject: MonterProject = {
   projectId: "proof-001",
   projectName: "MONTER Proof 001",
   createdAt: "2026-10-26T12:00:00Z",
-  sourceRootLabel: "D:/Project/RAW",
+  sourceRootLabel: "RAW",
   sourceBytes: 10_737_418_240,
   proxyBytes: 448_790_528,
   assets: [
-    { id: "a001", filename: "A001.mp4", durationSeconds: 14.4, width: 3840, height: 2160, fps: 50, codec: "h264", hasAudio: true, sourceSizeBytes: 811_200_000, motionLevel: "low" },
-    { id: "a014", filename: "A014.mp4", durationSeconds: 8.7, width: 3840, height: 2160, fps: 50, codec: "h264", hasAudio: true, sourceSizeBytes: 641_100_000, motionLevel: "high" },
-    { id: "a031", filename: "A031.mp4", durationSeconds: 22.1, width: 3840, height: 2160, fps: 50, codec: "h264", hasAudio: true, sourceSizeBytes: 1_201_200_000, motionLevel: "medium" },
-    { id: "a043", filename: "A043.mp4", durationSeconds: 16.8, width: 3840, height: 2160, fps: 50, codec: "h264", hasAudio: false, sourceSizeBytes: 932_400_000, motionLevel: "high" },
-    { id: "a052", filename: "A052.mp4", durationSeconds: 11.3, width: 3840, height: 2160, fps: 50, codec: "h264", hasAudio: true, sourceSizeBytes: 723_300_000, motionLevel: "medium" }
+    { id: "a001", filename: "A001.mp4", sourceRelPath: "A001.mp4", durationSeconds: 14.4, width: 3840, height: 2160, fps: 50, codec: "h264", hasAudio: true, sourceSizeBytes: 811_200_000, motionLevel: "low" },
+    { id: "a014", filename: "A014.mp4", sourceRelPath: "camera-a/A014.mp4", durationSeconds: 8.7, width: 3840, height: 2160, fps: 50, codec: "h264", hasAudio: true, sourceSizeBytes: 641_100_000, motionLevel: "high" },
+    { id: "a031", filename: "A031.mp4", sourceRelPath: "camera-a/A031.mp4", durationSeconds: 22.1, width: 3840, height: 2160, fps: 50, codec: "h264", hasAudio: true, sourceSizeBytes: 1_201_200_000, motionLevel: "medium" },
+    { id: "a043", filename: "A043.mp4", sourceRelPath: "camera-b/A043.mp4", durationSeconds: 16.8, width: 3840, height: 2160, fps: 50, codec: "h264", hasAudio: false, sourceSizeBytes: 932_400_000, motionLevel: "high" },
+    { id: "a052", filename: "A052.mp4", sourceRelPath: "camera-b/A052.mp4", durationSeconds: 11.3, width: 3840, height: 2160, fps: 50, codec: "h264", hasAudio: true, sourceSizeBytes: 723_300_000, motionLevel: "medium" }
   ],
   director: {
     targetDurationSeconds: 15,
