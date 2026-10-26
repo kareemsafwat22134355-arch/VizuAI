@@ -1,7 +1,7 @@
 "use client";
 
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
-import type { ArtifactBundle } from "@/lib/artifacts";
+import type { ArtifactBundle, DecisionScalar } from "@/lib/artifacts";
 import { mergeArtifacts } from "@/lib/artifacts";
 import { importMonterBundle } from "@/lib/bundle-import";
 import { Waveform } from "./Waveform";
@@ -15,6 +15,12 @@ function formatBytes(bytes?: number) {
 
 function metricLabel(name: string) {
   return name.replaceAll("_", " ");
+}
+
+function formatDecision(values: Record<string, DecisionScalar>) {
+  const entries = Object.entries(values);
+  if (entries.length === 0) return "—";
+  return entries.map(([key, value]) => `${metricLabel(key)}=${String(value)}`).join(" · ");
 }
 
 export function StudioClient() {
@@ -89,6 +95,7 @@ export function StudioClient() {
         <a className="navItem" href="#director">Director</a>
         <a className="navItem" href="#timeline">Timeline</a>
         <a className="navItem" href="#transitions">Transitions</a>
+        <a className="navItem" href="#corrections">Corrections</a>
         <a className="navItem" href="#critic">Critic</a>
       </nav>
       <div className="sidebarFooter"><span className="tinyLabel">PRIVACY</span><strong>Local files stay local</strong><p>`.monter.zip`, JSON, video and audio are decoded through browser File APIs. Studio does not upload the project to a server.</p></div>
@@ -151,6 +158,18 @@ export function StudioClient() {
               <small>motivation {candidate.motivationScore.toFixed(2)} · feasibility {candidate.feasibilityScore.toFixed(2)} · needs {candidate.requiredHandleSeconds.toFixed(2)}s handles</small>
             </div>)}</div>
           </div>)}</div> : <div className="emptyState">Load `transition-opportunities.json` to inspect candidate feasibility before any non-zero bridge is compiled.</div>}
+        </article>
+
+        <article className="card timelineCard" id="corrections">
+          <div className="sectionHeading"><div><p className="label">HUMAN FEEDBACK</p><h2>Correction ledger</h2></div><span className="pill">{bundle.corrections?.corrections.length ?? 0} overrides</span></div>
+          {bundle.corrections ? <div className="timeline">{bundle.corrections.corrections.map((correction) => <div className="timelineClip" key={correction.id}>
+            <div className="clipTop"><strong>{metricLabel(correction.kind)}</strong><span>{correction.targetType}{correction.targetRef ? ` ${correction.targetRef}` : ""}</span></div>
+            <div className="clipTimes">AI · {formatDecision(correction.aiDecision)}</div>
+            <div className="transitionReason">HUMAN · {formatDecision(correction.humanDecision)}</div>
+            <p>{correction.reason}</p>
+            {Object.keys(correction.context).length > 0 && <div className="clipSignals"><span>context · {formatDecision(correction.context)}</span></div>}
+            <small>{correction.source} · {correction.createdAt}</small>
+          </div>)}</div> : <div className="emptyState">No `human-corrections.json` loaded. v0.14 treats corrections as supervised evidence only; it does not auto-apply them to future edits.</div>}
         </article>
 
         <article className="card criticCard" id="critic">
