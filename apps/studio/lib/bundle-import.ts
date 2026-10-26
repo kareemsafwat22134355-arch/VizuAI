@@ -29,6 +29,7 @@ const ALLOWED_ENTRIES = new Set<string>([
   ...JSON_ARTIFACTS,
   "edit.otio",
   "rough-cut.mp4",
+  "rough-cut.audio.mp4",
 ]);
 
 export type MonterBundleManifest = {
@@ -115,7 +116,7 @@ export async function importMonterBundle(file: Blob): Promise<ImportedMonterBund
     throw new Error("MONTER bundle is missing a valid project.monter.json artifact.");
   }
 
-  const previewBytes = entries["rough-cut.mp4"];
+  const previewBytes = entries["rough-cut.audio.mp4"] ?? entries["rough-cut.mp4"];
   const preview = previewBytes ? new Blob([previewBytes], { type: "video/mp4" }) : undefined;
 
   return { artifacts, manifest, preview, ignoredEntries };
