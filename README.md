@@ -68,10 +68,32 @@ Use `--no-preview` when you want the smallest possible bundle:
 monter-bundle .monter --out trailer-analysis-only.monter.zip --no-preview
 ```
 
+## Video Microscope: learn from finished edits
+
+The production pipeline answers “what should MONTER cut?” The Video Microscope answers a different question: “what editorial patterns are visible in a finished human edit?”
+
+```bash
+monter-microscope "D:/Finished/edit-01.mp4" \
+  --label "KAREEM-01" \
+  --out "microscope-01.json"
+```
+
+Microscope v0.1 measures shot-duration rhythm, normalized motion-energy arcs, screen-direction continuity, action-phase cuts, deliberate physical discontinuity, and per-boundary `CutSignature` evidence. It deliberately does **not** claim semantic, gaze, composition, color, narrative, or sound-design understanding yet.
+
+Several finished edits can be aggregated into a conditional motion/rhythm style prior:
+
+```bash
+monter-style-profile microscope-01.json microscope-02.json microscope-03.json \
+  --name "KAREEM-SET-001" \
+  --out "kareem-style-profile.json"
+```
+
+The style profile is research data for future Director/Planner policy and regression testing. It is not a preset and it should not force every future edit to imitate the same cutting rate or transition behavior.
+
 The current baseline uses PySceneDetect, low-resolution streaming OpenCV optical flow, librosa audio analysis, typed CTL, FFmpeg draft rendering and OpenTimelineIO export. The critic keeps quality dimensions separate and can run a bounded targeted revision loop instead of endlessly regenerating the edit.
 
 ## Testing rule
 
-Every pull request must pass Studio tests/build plus Bridge unit tests and a real-media smoke test before it is considered merge-ready. The Bridge smoke test generates actual video clips with FFmpeg and runs the CINEMA-0 pipeline through proxying, analysis, planning, CTL, critique, OTIO export, rendering, and portable bundle creation.
+Every pull request must pass Studio tests/build plus Bridge unit tests and a real-media smoke test before it is considered merge-ready. The Bridge smoke test generates actual video clips with FFmpeg and runs the CINEMA-0 pipeline through proxying, analysis, planning, CTL, critique, OTIO export, rendering, and portable bundle creation. The Video Microscope also has a real-media smoke test that generates a finished edit with hard cuts and verifies that its shot/cut analysis runs on actual encoded video.
 
 See `docs/ARCHITECTURE.md` and `docs/OPEN_SOURCE.md`.
