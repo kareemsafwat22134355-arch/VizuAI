@@ -6,8 +6,8 @@ from pydantic import Field, model_validator
 
 from .models import PortableModel
 
-CTL_SCHEMA_VERSION = "ctl-0.1"
-TransitionMechanism = Literal["hard_cut", "motion_peak_cut", "motion_match_cut"]
+CTL_SCHEMA_VERSION = "ctl-0.2"
+TransitionMechanism = Literal["hard_cut", "motion_peak_cut", "motion_match_cut", "directional_bridge"]
 
 
 class CtlClip(PortableModel):
@@ -31,10 +31,19 @@ class CtlClip(PortableModel):
 class CtlTransition(PortableModel):
     boundary_index: int = Field(ge=1)
     mechanism: TransitionMechanism
-    duration_seconds: float = Field(default=0, ge=0)
+    duration_seconds: float = Field(default=0, ge=0, le=1)
     relation_score: float | None = Field(default=None, ge=0, le=1)
     evidence: dict[str, float | str | bool] = Field(default_factory=dict)
+    parameters: dict[str, float | str | bool] = Field(default_factory=dict)
     reason: str
+
+    @model_validator(mode="after")
+    def validate_duration_semantics(self) -> "CtlTransition":
+        if self.mechanism == "directional_bridge" and self.duration_seconds <= 0:
+            raise ValueError("directional_bridge requires positive duration")
+        if self.mechanism != "directional_bridge" and self.duration_seconds != 0:
+            raise ValueError("zero-duration cut mechanisms cannot carry transition duration")
+        return self
 
 
 class TimeWarpSlice(PortableModel):

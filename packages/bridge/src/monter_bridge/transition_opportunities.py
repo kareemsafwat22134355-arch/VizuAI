@@ -226,8 +226,9 @@ def synthesize_transition_opportunities(edit_plan: EditPlan, vir: VirProject) ->
         project_id=edit_plan.project_id,
         boundaries=boundaries,
         notes=[
-            "This report proposes and scores transition opportunities only; it does not compile non-zero bridge primitives into the renderer yet.",
+            "This report scores transition opportunities independently from CTL compilation; CTL v0.2 can promote supported feasible candidates such as directional_bridge.",
             "Hard cuts remain first-class valid decisions at every boundary.",
             "Non-zero bridge candidates require both physical motivation and verified source handles on each side of the cut.",
+            "Unsupported primitives or candidates adjacent to event-driven timewarps remain opportunities and fall back safely during CTL compilation.",
         ],
     )

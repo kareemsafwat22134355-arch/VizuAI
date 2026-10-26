@@ -35,6 +35,7 @@ def test_render_command_compiles_trim_scale_and_concat():
     assert "trim=start=0.500000:end=2.500000" in joined
     assert "concat=n=2:v=1:a=0" in joined
     assert "scale=w=960:h=540" in joined
+    assert "settb=AVTB" in joined
     assert "-an" in command
     assert command[-1] == "out.mp4"
 
@@ -61,3 +62,50 @@ def test_render_command_compiles_timewarp_slices_before_clip_concat():
     assert "setpts=(PTS-STARTPTS)/0.800000000" in joined
     assert "concat=n=3:v=1:a=0[base0]" in joined
     assert "[base0]scale=w=960:h=540" in joined
+
+
+def test_render_command_uses_symmetric_handles_for_directional_bridge_without_duration_drift():
+    ctl = fixture_ctl()
+    ctl.transitions = [CtlTransition(
+        boundary_index=1,
+        mechanism="directional_bridge",
+        duration_seconds=.12,
+        parameters={"screenDirection": "right"},
+        reason="matched motion",
+    )]
+
+    command = render_command(ctl, fixture_project(), Path("proxies"), Path("out.mp4"))
+    joined = " ".join(command)
+
+    # d/2 = .06s is borrowed from each side of the nominal edit boundary.
+    assert "trim=start=0.500000:end=2.560000" in joined
+    assert "trim=start=0.940000:end=3.000000" in joined
+    # First expanded clip is 2.06s, so a .12s overlap starts at 1.94s and ends centered on 2.00s.
+    assert "xfade=transition=slideright:duration=0.120000:offset=1.940000" in joined
+    assert "-t 4.000000" in joined
+
+
+def test_directional_bridge_rejects_timewarp_overlap_in_renderer():
+    ctl = fixture_ctl()
+    ctl.transitions = [CtlTransition(
+        boundary_index=1,
+        mechanism="directional_bridge",
+        duration_seconds=.12,
+        parameters={"screenDirection": "left"},
+        reason="matched motion",
+    )]
+    ctl.time_warps = [TimeWarpIntent(
+        segment_id="s1", anchor_seconds=1.5, reason="event",
+        slices=[
+            TimeWarpSlice(source_in_seconds=.5, source_out_seconds=1.2, playback_rate=.8),
+            TimeWarpSlice(source_in_seconds=1.2, source_out_seconds=1.7, playback_rate=1.8),
+            TimeWarpSlice(source_in_seconds=1.7, source_out_seconds=2.5, playback_rate=.94),
+        ],
+    )]
+
+    try:
+        render_command(ctl, fixture_project(), Path("proxies"), Path("out.mp4"))
+    except ValueError as exc:
+        assert "timewarp" in str(exc).lower()
+    else:
+        raise AssertionError("expected timewarp + non-zero transition guard")

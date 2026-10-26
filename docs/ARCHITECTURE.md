@@ -1,4 +1,4 @@
-# MONTER architecture v0.3
+# MONTER architecture v0.4
 
 ## Local Bridge
 
@@ -15,6 +15,7 @@ Current responsibilities:
 - derive motion-phase edit anchors
 - cache per-asset analysis using proxy + analyzer fingerprints
 - emit portable project, VIR, director, edit, CTL, critic, transition-opportunity, OTIO and production artifacts
+- compile selected feasible transition opportunities into typed deterministic CTL primitives
 - render deterministic proxy drafts with FFmpeg
 - create share bundles that exclude RAW media, proxies and analysis caches
 
@@ -36,7 +37,7 @@ Current responsibilities:
 - transition-opportunity feasibility and blocked/accepted candidates
 - critic dimensions/findings
 
-Later Studio responsibilities include human correction capture, richer waveform regions and benchmark comparisons.
+Studio accepts both CTL v0.1 and v0.2 bundles. Later responsibilities include human correction capture, richer waveform regions and benchmark comparisons.
 
 ## Boundary
 
@@ -46,8 +47,9 @@ RAW media (local)
     -> proxies + cached VIR analysis
     -> Director / Planner
     -> transition opportunity synthesis
-    -> CTL / Critic
-    -> portable .monter.zip
+    -> CTL compiler
+    -> deterministic transition/timewarp renderer
+    -> Critic / portable .monter.zip
     -> MONTER Studio (browser-local inspection)
     -> local RAW relink / final-quality renderer later
 ```
@@ -66,7 +68,22 @@ Inputs include:
 
 Current candidates are `hard_cut`, `action_cut`, `directional_bridge`, and `zoom_bridge`. `hard_cut` is always valid. Non-zero bridges require both sufficient physical motivation and verified source handles; a motivated idea is rejected if the source media cannot support it safely.
 
-The v0.12 transition-opportunity artifact is an **intent/feasibility layer only**. Non-zero bridge recommendations are not yet compiled into FFmpeg/WebGPU/Remotion effects. Keeping this boundary explicit prevents the planner from claiming visual behavior that the renderer cannot reproduce.
+## CTL v0.2 deterministic transition compiler
+
+v0.13 compiles the first non-zero opportunity: `directional_bridge`.
+
+A directional bridge is emitted only when:
+
+- the transition opportunity is feasible and recommended
+- both shots share confident cardinal screen direction
+- verified source handles exist on both sides
+- neither adjacent segment owns an event-driven timewarp
+
+For bridge duration `d`, the renderer expands the outgoing source by `d/2` after the nominal out point and the incoming source by `d/2` before the nominal in point. Those expanded clips overlap for exactly `d`, so total timeline duration remains unchanged. The nominal cut sits at the center of the overlap.
+
+The measured screen direction maps to one deterministic FFmpeg primitive: `slideleft`, `slideright`, `slideup`, or `slidedown`. Inputs are normalized to matching size, frame rate, timebase and pixel format before composition. The renderer checks computed duration against CTL before encoding.
+
+Non-zero transitions adjacent to a timewarp are deliberately deferred and fall back to a zero-duration motion-aware cut. `zoom_bridge` remains a scored feasibility candidate only; it is not yet a compiled renderer primitive.
 
 ## Video Microscope research track
 
