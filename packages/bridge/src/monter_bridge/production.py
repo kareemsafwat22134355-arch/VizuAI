@@ -33,12 +33,13 @@ def produce_project(
 
     work_dir.mkdir(parents=True, exist_ok=True)
     proxy_dir = work_dir / "proxies"
+    analysis_cache_dir = work_dir / "analysis-cache"
 
     project = ingest_project(source_root, project_name)
     create_project_proxies(project, source_root, proxy_dir, width=width, fps=fps)
     write_model(work_dir / "project.monter.json", project)
 
-    vir = analyze_project(project, proxy_dir)
+    vir = analyze_project(project, proxy_dir, cache_dir=analysis_cache_dir)
     write_model(work_dir / "vir.monter.json", vir)
     if not vir.shots:
         raise ValueError("No analyzable shots were produced; inspect VIR warnings before continuing")

@@ -45,9 +45,12 @@ The RAW footage stays local. The run produces a transparent working directory:
   edit.otio
   rough-cut.mp4
   proxies/
+  analysis-cache/
 ```
 
 Proxy reuse is parameter-aware. MONTER only reuses a proxy when the source file fingerprint and the requested analysis `width`/`fps` still match; changing proxy settings automatically invalidates the cached proxy.
+
+Shot/motion analysis is incremental too. Each asset's analysis cache is keyed by the proxy fingerprint plus MONTER's analysis algorithm version and sampling parameters. Re-running a 10GB project therefore reuses unchanged shot/motion intelligence instead of decoding every proxy again. When a proxy changes or the analyzer version changes, only the affected cache entries are rebuilt. Local optical flow and global camera motion are extracted from the same sampled decode pass for each shot.
 
 ## Share a project without sending the RAW footage
 
@@ -57,7 +60,7 @@ After a run, create a portable analysis package:
 monter-bundle .monter --out trailer.monter.zip
 ```
 
-The share bundle can contain the manifest, VIR, director/edit/CTL/critic artifacts, OTIO timeline, and optional rough-cut preview. It **never includes RAW media or the analysis proxy directory**. Source references in the project manifest are relative paths, so another MONTER instance can reason about the project without learning the absolute path on your computer.
+The share bundle can contain the manifest, VIR, director/edit/CTL/critic artifacts, OTIO timeline, and optional rough-cut preview. It **never includes RAW media, analysis proxies, or the analysis cache**. Source references in the project manifest are relative paths, so another MONTER instance can reason about the project without learning the absolute path on your computer.
 
 Use `--no-preview` when you want the smallest possible bundle:
 

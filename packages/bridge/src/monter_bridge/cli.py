@@ -65,6 +65,7 @@ def main() -> None:
     analyze = sub.add_parser("analyze", help="build VIR shot and motion intelligence from proxies")
     analyze.add_argument("--manifest", default="project.monter.json")
     analyze.add_argument("--proxy-dir", default=".monter/proxies")
+    analyze.add_argument("--cache-dir", default=".monter/analysis-cache")
     analyze.add_argument("--out", default="vir.monter.json")
 
     plan = sub.add_parser("plan", help="build a director plan and rough edit from VIR")
@@ -136,7 +137,7 @@ def main() -> None:
 
     if args.command == "analyze":
         project = load_project(Path(args.manifest))
-        vir = analyze_project(project, Path(args.proxy_dir))
+        vir = analyze_project(project, Path(args.proxy_dir), cache_dir=Path(args.cache_dir))
         write_model(Path(args.out), vir)
         print(f"VIR ready: {len(vir.shots)} shots, {len(vir.warnings)} warnings -> {args.out}")
         return
@@ -216,12 +217,13 @@ def main() -> None:
         work_dir.mkdir(parents=True, exist_ok=True)
         manifest_path = work_dir / "project.monter.json"
         proxy_dir = work_dir / "proxies"
+        cache_dir = work_dir / "analysis-cache"
         vir_path = work_dir / "vir.monter.json"
 
         project = ingest_project(source_root, args.name)
         create_project_proxies(project, source_root, proxy_dir, width=args.width, fps=args.fps)
         write_model(manifest_path, project)
-        vir = analyze_project(project, proxy_dir)
+        vir = analyze_project(project, proxy_dir, cache_dir=cache_dir)
         write_model(vir_path, vir)
         print(f"Prepared media: {project.project_name}: {len(project.assets)} assets, {len(vir.shots)} shots, {len(vir.warnings)} warnings")
         edit_plan = write_planning_outputs(vir_path, work_dir, args.duration, args.music)
