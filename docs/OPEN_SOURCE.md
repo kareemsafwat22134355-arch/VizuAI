@@ -10,13 +10,19 @@ MONTER should reuse mature open-source infrastructure when it accelerates develo
 - Why: mature OpenCV-based cut/fade detection; avoids rebuilding commodity boundary detection.
 - MONTER ownership: shot semantics, motion phases, edit anchors and editorial interpretation remain ours.
 
-## Planned
+### librosa
+- Role: music tempo, beat, onset and RMS-energy analysis.
+- License: ISC.
+- Adopted line: 1.x.
+- Why: mature music-information-retrieval primitives; MONTER still owns editorial interpretation and does not map beats directly to cuts.
 
 ### OpenTimelineIO
 - Role: interchange/export layer for editorial timelines and external NLE workflows.
 - License: Apache-2.0.
-- Why: mature industry timeline model with external-media references and adapters.
-- Status: adopt when the first real edit plan export lands; do not force VIR/CTL to become OTIO.
+- Adopted line: 0.18.x.
+- Why: industry timeline model with external-media references; VIR and CTL remain independent MONTER contracts.
+
+## Planned
 
 ### wavesurfer.js
 - Role: waveform, timeline marks and editorial audio regions inside Studio.
