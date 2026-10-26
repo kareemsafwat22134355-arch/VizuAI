@@ -35,6 +35,7 @@ AUTO_REVISION_CODES = {
     "low_confidence_selection",
     "immediate_repetition",
     "motion_match_timing_weak",
+    "motion_match_boundary_roll_needed",
 }
 
 PROMOTABLE_ARTIFACTS = (
@@ -190,7 +191,7 @@ def attempt_post_render_revision(
     changed_boundaries = [
         action.boundary_index
         for action in revision_report.actions
-        if action.kind == "realign_boundary" and action.boundary_index is not None
+        if action.kind in {"realign_boundary", "roll_boundary"} and action.boundary_index is not None
     ]
     if not revision_report.changed:
         return PostRenderRevisionReport(
