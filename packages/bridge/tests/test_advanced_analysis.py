@@ -68,6 +68,17 @@ def test_feasible_zoom_bridge_schedules_dense_flow_and_depth():
     assert plan.requests[0].right_window.source_start_seconds < 1.0
 
 
+def test_analysis_windows_stay_inside_selected_source_or_verified_handles():
+    program = ctl()
+    program.clips[0].source_in_seconds = 2.3
+    plan = build_advanced_analysis_plan(program, report("zoom_bridge", zoom=1.0, confidence=.7))
+    request = plan.requests[0]
+    assert request.left_window.source_start_seconds == 2.3
+    assert request.left_window.source_end_seconds <= 2.75
+    assert request.right_window.source_start_seconds == 0.75
+    assert request.right_window.source_end_seconds <= program.clips[1].source_out_seconds
+
+
 def test_strong_directional_bridge_stays_cheap():
     plan = build_advanced_analysis_plan(ctl(), report("directional_bridge", relation=.82, direction=1.0, confidence=.8))
     assert plan.requests == []
