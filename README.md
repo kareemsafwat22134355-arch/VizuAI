@@ -41,6 +41,7 @@ The RAW footage stays local. The run produces a transparent working directory:
   edit-plan.json
   ctl.json
   critic-report.json
+  transition-opportunities.json
   production-report.json
   edit.otio
   rough-cut.mp4
@@ -60,7 +61,7 @@ After a run, create a portable analysis package:
 monter-bundle .monter --out trailer.monter.zip
 ```
 
-The share bundle can contain the manifest, VIR, director/edit/CTL/critic artifacts, OTIO timeline, and optional rough-cut preview. It **never includes RAW media, analysis proxies, or the analysis cache**. Source references in the project manifest are relative paths, so another MONTER instance can reason about the project without learning the absolute path on your computer.
+The share bundle can contain the manifest, VIR, director/edit/CTL/critic artifacts, transition-opportunity reasoning, OTIO timeline, and optional rough-cut preview. It **never includes RAW media, analysis proxies, or the analysis cache**. Source references in the project manifest are relative paths, so another MONTER instance can reason about the project without learning the absolute path on your computer.
 
 Use `--no-preview` when you want the smallest possible bundle:
 
@@ -107,10 +108,29 @@ In v0.11 the style prior changes cutting density only. MONTER blends the default
 
 The resulting `edit-plan.json` records the baseline segment count, style-adjusted count, profile confidence, and observed median shot duration in `strategyNotes`, so the influence is inspectable rather than hidden.
 
+## Transition opportunities before effects
+
+MONTER does not turn every cut into an effect. Before a non-zero transition can exist, the system now creates a separate feasibility report for every edit boundary:
+
+```bash
+monter-transition-opportunities \
+  --edit-plan ".monter/edit-plan.json" \
+  --vir ".monter/vir.monter.json" \
+  --out ".monter/transition-opportunities.json"
+```
+
+The report always keeps `hard_cut` as a valid first-class candidate. It can also identify `action_cut`, `directional_bridge`, and `zoom_bridge` opportunities. Non-zero bridge candidates must satisfy **both** physical motivation and actual source-handle availability on the outgoing and incoming shots. A visually attractive idea is rejected when the edit has no safe source media to build it from.
+
+For every boundary the report stores the `CutSignature`, available handles, candidate duration/handle requirements, motivation score, feasibility score, parameters, and the reason each candidate is accepted or blocked. `monter produce` emits this report automatically, and `monter-bundle` includes it in the portable project package.
+
+The Studio reads the same artifact from `.monter.zip` and exposes the recommendation plus all feasible/blocked candidates boundary-by-boundary. This makes transition reasoning inspectable before expensive effects are compiled.
+
+**Important:** v0.12 is the synthesis/feasibility layer. `directional_bridge` and `zoom_bridge` are recommendations only at this stage; the deterministic renderer does not yet execute non-zero bridge primitives. This separation is intentional so MONTER never claims an effect was rendered when only the idea was validated.
+
 The current baseline uses PySceneDetect, low-resolution streaming OpenCV optical flow, librosa audio analysis, typed CTL, FFmpeg draft rendering and OpenTimelineIO export. The critic keeps quality dimensions separate and can run a bounded targeted revision loop instead of endlessly regenerating the edit.
 
 ## Testing rule
 
-Every pull request must pass Studio tests/build plus Bridge unit tests and a real-media smoke test before it is considered merge-ready. The Bridge smoke test generates actual video clips with FFmpeg and runs the CINEMA-0 pipeline through proxying, analysis, planning, CTL, critique, OTIO export, rendering, and portable bundle creation. The Video Microscope also has a real-media smoke test that generates a finished edit with hard cuts and verifies that its shot/cut analysis runs on actual encoded video.
+Every pull request must pass Studio tests/build plus Bridge unit tests and a real-media smoke test before it is considered merge-ready. The Bridge smoke test generates actual video clips with FFmpeg and runs the CINEMA-0 pipeline through proxying, analysis, planning, CTL, critique, transition-opportunity synthesis, OTIO export, rendering, and portable bundle creation. The Video Microscope also has a real-media smoke test that generates a finished edit with hard cuts and verifies that its shot/cut analysis runs on actual encoded video.
 
 See `docs/ARCHITECTURE.md` and `docs/OPEN_SOURCE.md`.

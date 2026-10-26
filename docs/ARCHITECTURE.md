@@ -1,4 +1,4 @@
-# MONTER architecture v0.2
+# MONTER architecture v0.3
 
 ## Local Bridge
 
@@ -14,7 +14,7 @@ Current responsibilities:
 - sample local optical flow and global camera motion from one decode pass per shot
 - derive motion-phase edit anchors
 - cache per-asset analysis using proxy + analyzer fingerprints
-- emit portable project, VIR, director, edit, CTL, critic, OTIO and production artifacts
+- emit portable project, VIR, director, edit, CTL, critic, transition-opportunity, OTIO and production artifacts
 - render deterministic proxy drafts with FFmpeg
 - create share bundles that exclude RAW media, proxies and analysis caches
 
@@ -33,9 +33,10 @@ Current responsibilities:
 - director energy curve
 - edit-plan reasoning
 - CTL transition rationale
+- transition-opportunity feasibility and blocked/accepted candidates
 - critic dimensions/findings
 
-Later Studio responsibilities include human correction capture, richer waveform regions, transition opportunity inspection and benchmark comparisons.
+Later Studio responsibilities include human correction capture, richer waveform regions and benchmark comparisons.
 
 ## Boundary
 
@@ -43,11 +44,29 @@ Later Studio responsibilities include human correction capture, richer waveform 
 RAW media (local)
     -> Local Bridge
     -> proxies + cached VIR analysis
-    -> Director / Planner / CTL / Critic
+    -> Director / Planner
+    -> transition opportunity synthesis
+    -> CTL / Critic
     -> portable .monter.zip
     -> MONTER Studio (browser-local inspection)
     -> local RAW relink / final-quality renderer later
 ```
+
+## Transition opportunity stage
+
+Transition invention is separated from transition rendering. Every edit boundary receives a feasibility report before a non-zero bridge can be considered.
+
+Inputs include:
+
+- outgoing and incoming shot ranges
+- actual edit in/out points
+- available source handles on both sides
+- `CutSignature` direction, zoom, phase and relation evidence
+- global-motion confidence
+
+Current candidates are `hard_cut`, `action_cut`, `directional_bridge`, and `zoom_bridge`. `hard_cut` is always valid. Non-zero bridges require both sufficient physical motivation and verified source handles; a motivated idea is rejected if the source media cannot support it safely.
+
+The v0.12 transition-opportunity artifact is an **intent/feasibility layer only**. Non-zero bridge recommendations are not yet compiled into FFmpeg/WebGPU/Remotion effects. Keeping this boundary explicit prevents the planner from claiming visual behavior that the renderer cannot reproduce.
 
 ## Video Microscope research track
 
@@ -64,7 +83,7 @@ Microscope v0.1 outputs:
 - deliberate-discontinuity rate
 - motion-match opportunity rate
 
-Multiple reports can be aggregated into a `StyleProfile`. The profile is a conditional research prior and regression target, not a preset. v0.1 explicitly does not claim semantic, gaze, composition, color, narrative or sound-design understanding.
+Multiple reports can be aggregated into a `StyleProfile`. The profile is a conditional research prior and regression target, not a preset. The rough-cut planner can use it as a confidence-weighted cadence prior while keeping the Director's dramatic energy arc authoritative. v0.1 explicitly does not claim semantic, gaze, composition, color, narrative or sound-design understanding.
 
 ## Progressive analysis
 

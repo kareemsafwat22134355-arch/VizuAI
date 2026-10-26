@@ -88,6 +88,7 @@ export function StudioClient() {
         <a className="navItem" href="#preview">Preview</a>
         <a className="navItem" href="#director">Director</a>
         <a className="navItem" href="#timeline">Timeline</a>
+        <a className="navItem" href="#transitions">Transitions</a>
         <a className="navItem" href="#critic">Critic</a>
       </nav>
       <div className="sidebarFooter"><span className="tinyLabel">PRIVACY</span><strong>Local files stay local</strong><p>`.monter.zip`, JSON, video and audio are decoded through browser File APIs. Studio does not upload the project to a server.</p></div>
@@ -136,6 +137,20 @@ export function StudioClient() {
               {transition && <div className="transitionReason">→ {transition.mechanism}: {transition.reason}</div>}
             </div>;
           })}</div> : <div className="emptyState">Load `edit-plan.json` and optionally `ctl.json`.</div>}
+        </article>
+
+        <article className="card timelineCard" id="transitions">
+          <div className="sectionHeading"><div><p className="label">TRANSITION SYNTHESIS</p><h2>Boundary opportunities</h2></div><span className="pill">{bundle.transitionOpportunities?.boundaries.length ?? 0} boundaries</span></div>
+          {bundle.transitionOpportunities ? <div className="timeline">{bundle.transitionOpportunities.boundaries.map((boundary) => <div className="timelineClip" key={boundary.boundaryIndex}>
+            <div className="clipTop"><strong>Boundary {boundary.boundaryIndex}</strong><span>{metricLabel(boundary.recommendedMechanism)}</span></div>
+            <div className="clipTimes">handles out {boundary.outgoingHandleSeconds.toFixed(3)}s · in {boundary.incomingHandleSeconds.toFixed(3)}s</div>
+            <div className="clipSignals"><span>relation {boundary.cutSignature.relationScore.toFixed(2)}</span><span>phase {boundary.cutSignature.phaseCompatibility.toFixed(2)}</span><span>direction {boundary.cutSignature.directionCompatibility.toFixed(2)}</span></div>
+            <div className="findingList">{boundary.candidates.map((candidate) => <div className={`finding finding-${candidate.feasible ? "info" : "warning"}`} key={candidate.mechanism}>
+              <strong>{candidate.feasible ? "✓" : "×"} {metricLabel(candidate.mechanism)}</strong>
+              <span>{candidate.reason}</span>
+              <small>motivation {candidate.motivationScore.toFixed(2)} · feasibility {candidate.feasibilityScore.toFixed(2)} · needs {candidate.requiredHandleSeconds.toFixed(2)}s handles</small>
+            </div>)}</div>
+          </div>)}</div> : <div className="emptyState">Load `transition-opportunities.json` to inspect candidate feasibility before any non-zero bridge is compiled.</div>}
         </article>
 
         <article className="card criticCard" id="critic">
