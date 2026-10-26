@@ -9,6 +9,8 @@ from .models import PortableModel
 
 VIR_SCHEMA_VERSION = "vir-0.1"
 AnchorType = Literal["clip_start", "clip_end", "motion_onset", "motion_peak", "motion_settle"]
+ScreenDirection = Literal["static", "left", "right", "up", "down", "mixed"]
+ZoomDirection = Literal["static", "in", "out", "mixed"]
 
 
 class TimeRange(PortableModel):
@@ -31,6 +33,26 @@ class MotionSample(PortableModel):
     magnitude: float = Field(ge=0)
 
 
+class GlobalMotionSample(PortableModel):
+    time_seconds: float = Field(ge=0)
+    translation_x: float
+    translation_y: float
+    rotation_degrees: float
+    scale: float = Field(gt=0)
+    inlier_ratio: float = Field(ge=0, le=1)
+
+
+class GlobalMotionSummary(PortableModel):
+    dominant_screen_direction: ScreenDirection = "static"
+    zoom_direction: ZoomDirection = "static"
+    mean_translation_x: float = 0.0
+    mean_translation_y: float = 0.0
+    mean_rotation_degrees: float = 0.0
+    mean_scale_delta: float = 0.0
+    confidence: float = Field(default=0.0, ge=0, le=1)
+    samples: list[GlobalMotionSample] = Field(default_factory=list)
+
+
 class EditAnchor(PortableModel):
     type: AnchorType
     time_seconds: float = Field(ge=0)
@@ -46,6 +68,7 @@ class ShotAnalysis(PortableModel):
     peak_motion: float = Field(ge=0)
     motion_samples: list[MotionSample]
     edit_anchors: list[EditAnchor]
+    global_motion: GlobalMotionSummary = Field(default_factory=GlobalMotionSummary)
 
 
 class VirProject(PortableModel):
