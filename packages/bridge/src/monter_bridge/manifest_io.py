@@ -6,7 +6,9 @@ import orjson
 from pydantic import BaseModel
 
 from .analysis_models import VirProject
+from .ctl_models import CtlProgram
 from .models import MonterProject
+from .planning_models import EditPlan
 
 
 def load_project(path: Path) -> MonterProject:
@@ -15,6 +17,14 @@ def load_project(path: Path) -> MonterProject:
 
 def load_vir(path: Path) -> VirProject:
     return VirProject.model_validate(orjson.loads(path.read_bytes()))
+
+
+def load_edit_plan(path: Path) -> EditPlan:
+    return EditPlan.model_validate(orjson.loads(path.read_bytes()))
+
+
+def load_ctl(path: Path) -> CtlProgram:
+    return CtlProgram.model_validate(orjson.loads(path.read_bytes()))
 
 
 def write_model(path: Path, model: BaseModel) -> None:
