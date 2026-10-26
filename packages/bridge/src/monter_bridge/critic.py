@@ -5,6 +5,7 @@ from collections import Counter
 from .analysis_models import VirProject
 from .ctl_models import CtlProgram
 from .critic_models import CriticFinding, CriticMetric, CriticReport
+from .motion_match_realign import propose_motion_match_realign
 from .planning_models import EditPlan
 
 CORE_REVISION_METRICS = {
@@ -12,6 +13,7 @@ CORE_REVISION_METRICS = {
     "mean_energy_error",
     "low_confidence_ratio",
     "adjacent_repeat_count",
+    "recoverable_motion_match_timing_count",
 }
 
 
@@ -107,6 +109,42 @@ def critique_edit(edit: EditPlan, ctl: CtlProgram, vir: VirProject) -> CriticRep
             message="Every boundary is labeled with a mechanism; preserve at least one deliberate hard cut.",
         ))
 
+    # Only motion_match_cut boundaries are eligible for source-trim timing repair.
+    # Deliberate hard cuts are never turned into action cuts by this heuristic.
+    warped_segment_ids = {warp.segment_id for warp in ctl.time_warps}
+    recoverable_motion_match_timing = 0
+    for transition in ctl.transitions:
+        if transition.mechanism != "motion_match_cut":
+            continue
+        boundary_index = transition.boundary_index
+        if boundary_index < 1 or boundary_index >= len(edit.segments):
+            continue
+        left = edit.segments[boundary_index - 1]
+        right = edit.segments[boundary_index]
+        if left.id in warped_segment_ids or right.id in warped_segment_ids:
+            continue
+        proposal = propose_motion_match_realign(edit, vir, boundary_index)
+        if proposal is None:
+            continue
+        recoverable_motion_match_timing += 1
+        findings.append(CriticFinding(
+            code="motion_match_timing_weak",
+            severity="warning",
+            boundary_index=boundary_index,
+            message=(
+                f"Motion-match boundary {boundary_index} has phase compatibility "
+                f"{proposal.before_phase_compatibility:.2f}, but bounded source-trim shifts "
+                f"({proposal.left_shift_seconds:+.3f}s / {proposal.right_shift_seconds:+.3f}s) "
+                f"can raise it to {proposal.after_phase_compatibility:.2f}."
+            ),
+        ))
+    metrics.append(CriticMetric(
+        name="recoverable_motion_match_timing_count",
+        value=float(recoverable_motion_match_timing),
+        target="0 recoverable weak-timing motion-match boundaries",
+        passed=recoverable_motion_match_timing == 0,
+    ))
+
     if vir.warnings:
         findings.append(CriticFinding(
             code="analysis_warnings", severity="warning",
@@ -125,5 +163,6 @@ def critique_edit(edit: EditPlan, ctl: CtlProgram, vir: VirProject) -> CriticRep
         notes=[
             "Metrics remain separate by design; MONTER does not collapse editorial quality into one aggregate score.",
             "Core metric failures trigger a bounded revision pass; other warnings can remain intentional editorial choices.",
+            "Source-trim timing repair is considered only for existing motion_match_cut boundaries with strong reachable motion anchors and no adjacent timewarp.",
         ],
     )
