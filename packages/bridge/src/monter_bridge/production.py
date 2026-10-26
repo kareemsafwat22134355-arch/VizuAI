@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .advanced_analysis import build_advanced_analysis_plan
 from .analysis import analyze_project
 from .audio import analyze_audio
 from .critic import critique_edit
@@ -30,9 +31,12 @@ def produce_project(
     max_revision_iterations: int = 2,
     render: bool = True,
     style_profile: StyleProfile | None = None,
+    max_advanced_boundaries: int = 4,
 ) -> ProductionReport:
     if max_revision_iterations < 0 or max_revision_iterations > 4:
         raise ValueError("max_revision_iterations must be between 0 and 4")
+    if max_advanced_boundaries < 1:
+        raise ValueError("max_advanced_boundaries must be >= 1")
 
     work_dir.mkdir(parents=True, exist_ok=True)
     proxy_dir = work_dir / "proxies"
@@ -74,11 +78,17 @@ def produce_project(
         revision_iterations = iteration
 
     transitions = synthesize_transition_opportunities(edit, vir)
+    advanced_analysis = build_advanced_analysis_plan(
+        ctl,
+        transitions,
+        max_boundaries=max_advanced_boundaries,
+    )
 
     write_model(work_dir / "edit-plan.json", edit)
     write_model(work_dir / "ctl.json", ctl)
     write_model(work_dir / "critic-report.json", critic)
     write_model(work_dir / "transition-opportunities.json", transitions)
+    write_model(work_dir / "advanced-analysis-plan.json", advanced_analysis)
     export_otio(project, edit, work_dir / "edit.otio")
 
     if render:
@@ -98,6 +108,7 @@ def produce_project(
         "ctl.json",
         "critic-report.json",
         "transition-opportunities.json",
+        "advanced-analysis-plan.json",
         "edit.otio",
     ]
     if audio:
