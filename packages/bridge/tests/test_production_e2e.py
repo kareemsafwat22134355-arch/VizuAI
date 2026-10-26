@@ -18,23 +18,10 @@ FFMPEG_AVAILABLE = shutil.which("ffmpeg") is not None and shutil.which("ffprobe"
 def _make_clip(path: Path, lavfi_source: str, duration: float = 2.4) -> None:
     subprocess.run(
         [
-            "ffmpeg",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-y",
-            "-f",
-            "lavfi",
-            "-i",
-            lavfi_source,
-            "-t",
-            str(duration),
-            "-c:v",
-            "libx264",
-            "-preset",
-            "ultrafast",
-            "-pix_fmt",
-            "yuv420p",
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "lavfi", "-i", lavfi_source,
+            "-t", str(duration),
+            "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
             str(path),
         ],
         check=True,
@@ -44,32 +31,12 @@ def _make_clip(path: Path, lavfi_source: str, duration: float = 2.4) -> None:
 def _make_av_clip(path: Path, color: str, frequency: int, duration: float = 2.4) -> None:
     subprocess.run(
         [
-            "ffmpeg",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-y",
-            "-f",
-            "lavfi",
-            "-i",
-            f"color=c={color}:size=320x180:rate=12",
-            "-f",
-            "lavfi",
-            "-i",
-            f"sine=frequency={frequency}:sample_rate=48000",
-            "-t",
-            str(duration),
-            "-shortest",
-            "-c:v",
-            "libx264",
-            "-preset",
-            "ultrafast",
-            "-pix_fmt",
-            "yuv420p",
-            "-c:a",
-            "aac",
-            "-b:a",
-            "96k",
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "lavfi", "-i", f"color=c={color}:size=320x180:rate=12",
+            "-f", "lavfi", "-i", f"sine=frequency={frequency}:sample_rate=48000",
+            "-t", str(duration), "-shortest",
+            "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "96k",
             str(path),
         ],
         check=True,
@@ -78,16 +45,7 @@ def _make_av_clip(path: Path, color: str, frequency: int, duration: float = 2.4)
 
 def _probe(path: Path) -> dict:
     completed = subprocess.run(
-        [
-            "ffprobe",
-            "-v",
-            "error",
-            "-show_streams",
-            "-show_format",
-            "-of",
-            "json",
-            str(path),
-        ],
+        ["ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", str(path)],
         check=True,
         capture_output=True,
         text=True,
@@ -122,23 +80,16 @@ def test_produce_real_media_end_to_end(tmp_path: Path):
     assert report.sound_pass_executed is True
     assert report.audio_mix_audited is False
     assert report.audio_mix_safe is None
+    assert report.render_reanalysis_executed is True
+    assert report.render_integrity_safe is True
+    assert report.render_energy_alignment is not None
 
     expected = {
-        "project.monter.json",
-        "vir.monter.json",
-        "director-plan.json",
-        "edit-plan.json",
-        "ctl.json",
-        "critic-report.json",
-        "transition-opportunities.json",
-        "advanced-analysis-plan.json",
-        "advanced-analysis-results.json",
-        "transition-refinement.json",
-        "sound-director.json",
-        "audio-edit-plan.json",
-        "production-report.json",
-        "edit.otio",
-        "rough-cut.mp4",
+        "project.monter.json", "vir.monter.json", "director-plan.json", "edit-plan.json",
+        "ctl.json", "critic-report.json", "transition-opportunities.json",
+        "advanced-analysis-plan.json", "advanced-analysis-results.json", "transition-refinement.json",
+        "sound-director.json", "audio-edit-plan.json", "render-analysis.json",
+        "production-report.json", "edit.otio", "rough-cut.mp4",
     }
     assert expected.issubset({path.name for path in work.iterdir() if path.is_file()})
     assert (work / "rough-cut.mp4").stat().st_size > 0
@@ -162,9 +113,14 @@ def test_produce_real_media_end_to_end(tmp_path: Path):
     advanced_results = json.loads((work / "advanced-analysis-results.json").read_text(encoding="utf-8"))
     refinement = json.loads((work / "transition-refinement.json").read_text(encoding="utf-8"))
     sound = json.loads((work / "sound-director.json").read_text(encoding="utf-8"))
+    render_analysis = json.loads((work / "render-analysis.json").read_text(encoding="utf-8"))
     assert advanced_results["projectId"] == report.project_id
     assert refinement["projectId"] == report.project_id
     assert sound["projectId"] == report.project_id
+    assert render_analysis["schemaVersion"] == "render-analysis-0.1"
+    assert render_analysis["projectId"] == report.project_id
+    assert render_analysis["status"] == "pass"
+    assert render_analysis["sampledFrames"] > 0
 
     manifest = json.loads((work / "project.monter.json").read_text(encoding="utf-8"))
     assert len(manifest["assets"]) == 3
@@ -190,12 +146,13 @@ def test_produce_real_media_end_to_end(tmp_path: Path):
         assert "transition-refinement.json" in names
         assert "sound-director.json" in names
         assert "audio-edit-plan.json" in names
+        assert "render-analysis.json" in names
         assert "rough-cut.mp4" in names
         assert all(not name.startswith("proxies/") for name in names)
 
 
 @pytest.mark.skipif(not FFMPEG_AVAILABLE, reason="FFmpeg/ffprobe required for real-media smoke test")
-def test_produce_audio_media_runs_sound_render_and_mix_audit(tmp_path: Path):
+def test_produce_audio_media_runs_sound_render_mix_audit_and_reanalysis(tmp_path: Path):
     raw = tmp_path / "RAW"
     raw.mkdir()
     _make_av_clip(raw / "01_blue.mp4", "0x203060", 330)
@@ -217,16 +174,22 @@ def test_produce_audio_media_runs_sound_render_and_mix_audit(tmp_path: Path):
     assert report.sound_pass_executed is True
     assert report.audio_mix_audited is True
     assert report.audio_mix_safe is True
+    assert report.render_reanalysis_executed is True
+    assert report.render_integrity_safe is True
     assert "sound-director.json" in report.artifacts
     assert "audio-edit-plan.json" in report.artifacts
     assert "audio-mix-audit.json" in report.artifacts
+    assert "render-analysis.json" in report.artifacts
 
     audio_plan = json.loads((work / "audio-edit-plan.json").read_text(encoding="utf-8"))
     audit = json.loads((work / "audio-mix-audit.json").read_text(encoding="utf-8"))
+    render_analysis = json.loads((work / "render-analysis.json").read_text(encoding="utf-8"))
     assert audio_plan["projectId"] == report.project_id
     assert len(audio_plan["events"]) > 0
     assert audit["clippingSafe"] is True
     assert audit["maxVolumeDbfs"] <= audit["safetyThresholdDbfs"]
+    assert render_analysis["status"] == "pass"
+    assert render_analysis["hasAudio"] is True
 
     probe = _probe(work / "rough-cut.mp4")
     codec_types = {stream["codec_type"] for stream in probe["streams"]}
