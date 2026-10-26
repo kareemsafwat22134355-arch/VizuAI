@@ -40,22 +40,22 @@ def test_share_bundle_excludes_proxies_and_raw(tmp_path: Path):
     )
     (work_dir / "vir.monter.json").write_text("{}", encoding="utf-8")
     (work_dir / "advanced-analysis-results.json").write_text(
-        json.dumps(
-            {
-                "schemaVersion": "advanced-analysis-results-0.1",
-                "projectId": "p1",
-                "boundaries": [],
-                "notes": [],
-            }
-        ),
+        json.dumps({"schemaVersion": "advanced-analysis-results-0.1", "projectId": "p1", "boundaries": [], "notes": []}),
         encoding="utf-8",
     )
     (work_dir / "transition-refinement.json").write_text(
+        json.dumps({"schemaVersion": "transition-refinement-0.1", "projectId": "p1", "boundaries": [], "notes": []}),
+        encoding="utf-8",
+    )
+    (work_dir / "audio-edit-plan.json").write_text(
         json.dumps(
             {
-                "schemaVersion": "transition-refinement-0.1",
+                "schemaVersion": "audio-edit-plan-0.1",
                 "projectId": "p1",
+                "durationSeconds": 2.0,
+                "events": [],
                 "boundaries": [],
+                "musicGainDb": -8.0,
                 "notes": [],
             }
         ),
@@ -106,6 +106,7 @@ def test_share_bundle_excludes_proxies_and_raw(tmp_path: Path):
         encoding="utf-8",
     )
     (work_dir / "rough-cut.mp4").write_bytes(b"preview")
+    (work_dir / "rough-cut.audio.mp4").write_bytes(b"audio-preview")
     proxies = work_dir / "proxies"
     proxies.mkdir()
     (proxies / "a1.mp4").write_bytes(b"proxy-bytes")
@@ -124,10 +125,12 @@ def test_share_bundle_excludes_proxies_and_raw(tmp_path: Path):
         assert "vir.monter.json" in names
         assert "advanced-analysis-results.json" in names
         assert "transition-refinement.json" in names
+        assert "audio-edit-plan.json" in names
         assert "human-corrections.json" in names
         assert "decision-reviews.json" in names
         assert "decision-review-summary.json" in names
         assert "rough-cut.mp4" in names
+        assert "rough-cut.audio.mp4" in names
         assert all(not name.startswith("proxies/") for name in names)
 
         manifest = json.loads(archive.read("bundle-manifest.json"))
@@ -135,22 +138,25 @@ def test_share_bundle_excludes_proxies_and_raw(tmp_path: Path):
         assert manifest["proxiesIncluded"] is False
         assert "advanced-analysis-results.json" in manifest["includedArtifacts"]
         assert "transition-refinement.json" in manifest["includedArtifacts"]
+        assert "audio-edit-plan.json" in manifest["includedArtifacts"]
         assert "human-corrections.json" in manifest["includedArtifacts"]
         assert "decision-reviews.json" in manifest["includedArtifacts"]
         assert "decision-review-summary.json" in manifest["includedArtifacts"]
 
 
-def test_share_bundle_can_exclude_preview(tmp_path: Path):
+def test_share_bundle_can_exclude_all_previews(tmp_path: Path):
     work_dir = tmp_path / ".monter"
     work_dir.mkdir()
     (work_dir / "project.monter.json").write_text("{}", encoding="utf-8")
     (work_dir / "rough-cut.mp4").write_bytes(b"preview")
+    (work_dir / "rough-cut.audio.mp4").write_bytes(b"audio-preview")
 
     output = tmp_path / "share.monter.zip"
     create_share_bundle(work_dir, output, include_preview=False)
 
     with zipfile.ZipFile(output) as archive:
         assert "rough-cut.mp4" not in archive.namelist()
+        assert "rough-cut.audio.mp4" not in archive.namelist()
 
 
 def test_share_bundle_requires_project_manifest(tmp_path: Path):

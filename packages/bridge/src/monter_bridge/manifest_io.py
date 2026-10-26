@@ -6,6 +6,7 @@ import orjson
 from pydantic import BaseModel
 
 from .analysis_models import VirProject
+from .audio_edit_models import AudioEditPlan
 from .ctl_models import CtlProgram
 from .microscope_models import MicroscopeReport, StyleProfile
 from .models import MonterProject
@@ -26,6 +27,10 @@ def load_edit_plan(path: Path) -> EditPlan:
 
 def load_ctl(path: Path) -> CtlProgram:
     return CtlProgram.model_validate(orjson.loads(path.read_bytes()))
+
+
+def load_audio_edit_plan(path: Path) -> AudioEditPlan:
+    return AudioEditPlan.model_validate(orjson.loads(path.read_bytes()))
 
 
 def load_microscope_report(path: Path) -> MicroscopeReport:

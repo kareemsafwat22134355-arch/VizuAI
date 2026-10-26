@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from monter_bridge.audio_edit import build_audio_edit_plan
+from monter_bridge.audio_edit_models import AudioBoundaryIntent
 from monter_bridge.ctl_models import CtlClip, CtlProgram, CtlTransition, TimeWarpIntent, TimeWarpSlice
 from monter_bridge.models import MediaAsset, MonterProject
 from monter_bridge.render import render_command
@@ -40,12 +42,31 @@ def test_render_command_compiles_trim_scale_and_concat():
     assert command[-1] == "out.mp4"
 
 
-def test_render_command_maps_optional_music():
+def test_render_command_maps_optional_music_through_mix_graph():
     command = render_command(fixture_ctl(), fixture_project(), Path("proxies"), Path("out.mp4"), Path("music.wav"))
     joined = " ".join(command)
     assert "-stream_loop -1 -i music.wav" in joined
-    assert "-map 2:a:0" in joined
+    assert "[2:a]atrim=duration=4.000000" in joined
+    assert "volume=-2.500dB" in joined
     assert "afade=t=out" in joined
+    assert "-map [aout]" in joined
+
+
+def test_render_command_compiles_real_j_cut_audio_overlap():
+    ctl = fixture_ctl()
+    plan = build_audio_edit_plan(
+        fixture_project(),
+        ctl,
+        boundary_intents=[AudioBoundaryIntent(boundary_index=1, kind="j_cut", overlap_seconds=.25, reason="incoming sound leads picture")],
+    )
+    joined = " ".join(render_command(ctl, fixture_project(), Path("proxies"), Path("out.mp4"), audio_plan=plan))
+
+    assert "[0:a]atrim=start=0.500000:end=2.500000" in joined
+    assert "[1:a]atrim=start=0.750000:end=3.000000" in joined
+    assert "adelay=1750:all=1" in joined
+    assert "amix=inputs=2:duration=longest:dropout_transition=0:normalize=0" in joined
+    assert "-map [aout]" in joined
+    assert "-t 4.000000" in joined
 
 
 def test_render_command_compiles_timewarp_slices_before_clip_concat():
@@ -77,10 +98,8 @@ def test_render_command_uses_symmetric_handles_for_directional_bridge_without_du
     command = render_command(ctl, fixture_project(), Path("proxies"), Path("out.mp4"))
     joined = " ".join(command)
 
-    # d/2 = .06s is borrowed from each side of the nominal edit boundary.
     assert "trim=start=0.500000:end=2.560000" in joined
     assert "trim=start=0.940000:end=3.000000" in joined
-    # First expanded clip is 2.06s, so a .12s overlap starts at 1.94s and ends centered on 2.00s.
     assert "xfade=transition=slideright:duration=0.120000:offset=1.940000" in joined
     assert "-t 4.000000" in joined
 
