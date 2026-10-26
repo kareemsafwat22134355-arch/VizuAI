@@ -15,7 +15,7 @@ const JSON_ARTIFACTS = [
 
 const ALLOWED_ENTRIES = new Set<string>([
   "bundle-manifest.json", ...JSON_ARTIFACTS, "render-analysis.json", "final-critic-report.json",
-  "edit.otio", "rough-cut.mp4", "rough-cut.audio.mp4",
+  "post-render-revision-report.json", "edit.otio", "rough-cut.mp4", "rough-cut.audio.mp4",
 ]);
 
 export type MonterBundleManifest = {
@@ -77,10 +77,30 @@ export type FinalCriticReport = {
   notes: string[];
 };
 
+export type PostRenderRevisionReport = {
+  schemaVersion: "post-render-revision-0.1";
+  projectId: string;
+  eligible: boolean;
+  attempted: boolean;
+  changed: boolean;
+  accepted: boolean;
+  reason: string;
+  baselineFinalStatus: string;
+  candidateFinalStatus?: string | null;
+  baselineAutomaticCandidates: number;
+  candidateAutomaticCandidates?: number | null;
+  changedSegments: string[];
+  candidateDir?: string | null;
+  baselineSnapshotDir?: string | null;
+  promotedArtifacts: string[];
+  notes: string[];
+};
+
 export type ImportedMonterBundle = {
   artifacts: ArtifactBundle;
   renderAnalysis?: RenderAnalysisReport;
   finalCritic?: FinalCriticReport;
+  postRenderRevision?: PostRenderRevisionReport;
   manifest: MonterBundleManifest;
   preview?: Blob;
   ignoredEntries: string[];
@@ -115,6 +135,22 @@ function parseFinalCritic(bytes: Uint8Array): FinalCriticReport {
     throw new Error("final-critic-report.json: invalid final critic report");
   }
   return value as FinalCriticReport;
+}
+
+function parsePostRenderRevision(bytes: Uint8Array): PostRenderRevisionReport {
+  const value = JSON.parse(strFromU8(bytes)) as Partial<PostRenderRevisionReport>;
+  if (
+    value.schemaVersion !== "post-render-revision-0.1"
+    || typeof value.projectId !== "string"
+    || typeof value.attempted !== "boolean"
+    || typeof value.accepted !== "boolean"
+    || typeof value.reason !== "string"
+    || !Array.isArray(value.changedSegments)
+    || !Array.isArray(value.promotedArtifacts)
+  ) {
+    throw new Error("post-render-revision-report.json: invalid post-render revision report");
+  }
+  return value as PostRenderRevisionReport;
 }
 
 export async function importMonterBundle(file: Blob): Promise<ImportedMonterBundle> {
@@ -157,7 +193,11 @@ export async function importMonterBundle(file: Blob): Promise<ImportedMonterBund
   const finalCritic = finalCriticBytes ? parseFinalCritic(finalCriticBytes) : undefined;
   if (finalCritic && finalCritic.projectId !== artifacts.project.projectId) throw new Error("final-critic-report.json: projectId does not match the currently loaded bundle");
 
+  const postRenderRevisionBytes = entries["post-render-revision-report.json"];
+  const postRenderRevision = postRenderRevisionBytes ? parsePostRenderRevision(postRenderRevisionBytes) : undefined;
+  if (postRenderRevision && postRenderRevision.projectId !== artifacts.project.projectId) throw new Error("post-render-revision-report.json: projectId does not match the currently loaded bundle");
+
   const previewBytes = entries["rough-cut.audio.mp4"] ?? entries["rough-cut.mp4"];
   const preview = previewBytes ? new Blob([previewBytes], { type: "video/mp4" }) : undefined;
-  return { artifacts, renderAnalysis, finalCritic, manifest, preview, ignoredEntries };
+  return { artifacts, renderAnalysis, finalCritic, postRenderRevision, manifest, preview, ignoredEntries };
 }
