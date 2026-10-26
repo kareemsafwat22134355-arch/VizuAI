@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from .analysis_models import VirProject
 from .ctl_models import CtlProgram
+from .microscope_models import MicroscopeReport, StyleProfile
 from .models import MonterProject
 from .planning_models import EditPlan
 
@@ -25,6 +26,14 @@ def load_edit_plan(path: Path) -> EditPlan:
 
 def load_ctl(path: Path) -> CtlProgram:
     return CtlProgram.model_validate(orjson.loads(path.read_bytes()))
+
+
+def load_microscope_report(path: Path) -> MicroscopeReport:
+    return MicroscopeReport.model_validate(orjson.loads(path.read_bytes()))
+
+
+def load_style_profile(path: Path) -> StyleProfile:
+    return StyleProfile.model_validate(orjson.loads(path.read_bytes()))
 
 
 def write_model(path: Path, model: BaseModel) -> None:
