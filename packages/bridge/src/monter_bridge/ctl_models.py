@@ -8,6 +8,7 @@ from .models import PortableModel
 
 CTL_SCHEMA_VERSION = "ctl-0.1"
 TransitionMechanism = Literal["hard_cut", "motion_peak_cut", "motion_match_cut"]
+AudioBoundaryMechanism = Literal["straight", "l_cut", "j_cut"]
 
 
 class CtlClip(PortableModel):
@@ -56,6 +57,13 @@ class TimeWarpIntent(PortableModel):
     slices: list[TimeWarpSlice] = Field(min_length=2)
 
 
+class AudioBoundaryIntent(PortableModel):
+    boundary_index: int = Field(ge=1)
+    mechanism: AudioBoundaryMechanism
+    offset_seconds: float = Field(default=0.0, ge=0, le=1.0)
+    reason: str
+
+
 class CtlProgram(PortableModel):
     schema_version: str = CTL_SCHEMA_VERSION
     project_id: str
@@ -63,5 +71,8 @@ class CtlProgram(PortableModel):
     clips: list[CtlClip]
     transitions: list[CtlTransition]
     time_warps: list[TimeWarpIntent] = Field(default_factory=list)
+    audio_boundaries: list[AudioBoundaryIntent] = Field(default_factory=list)
+    source_audio_gain: float = Field(default=0.42, ge=0, le=1.5)
+    music_gain: float = Field(default=0.72, ge=0, le=1.5)
     render_fps: int = Field(default=24, ge=1, le=120)
     render_width: int = Field(default=960, ge=320)
