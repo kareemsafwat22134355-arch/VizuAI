@@ -63,6 +63,9 @@ class AcceptedCandidateState:
     audio_audit: AudioMixAudit | None
     render_analysis: RenderAnalysisReport
     audio_plan: AudioEditPlan | None
+    advanced_boundaries_executed: int
+    transition_refinements_applied: int
+    sound_non_sync_selected: int
 
 
 def should_attempt_post_render_revision(final_critic: FinalCriticReport) -> bool:
@@ -107,8 +110,14 @@ def filter_automatic_editorial_critic(
     )
 
 
+def _reset_dir(path: Path) -> None:
+    if path.exists():
+        shutil.rmtree(path)
+    path.mkdir(parents=True, exist_ok=True)
+
+
 def _snapshot_baseline(work_dir: Path, baseline_dir: Path) -> list[str]:
-    baseline_dir.mkdir(parents=True, exist_ok=True)
+    _reset_dir(baseline_dir)
     copied: list[str] = []
     for name in PROMOTABLE_ARTIFACTS:
         source = work_dir / name
@@ -192,7 +201,7 @@ def attempt_post_render_revision(
         ), None
 
     candidate_dir = work_dir / "post-render-candidate-01"
-    candidate_dir.mkdir(parents=True, exist_ok=True)
+    _reset_dir(candidate_dir)
     write_model(candidate_dir / "revision-report.json", revision_report)
     write_model(candidate_dir / "edit-plan.json", revised_edit)
 
@@ -207,6 +216,8 @@ def attempt_post_render_revision(
     write_model(candidate_dir / "advanced-analysis-plan.json", advanced_plan)
 
     ctl = base_ctl
+    advanced_boundaries_executed = 0
+    transition_refinements_applied = 0
     if run_advanced_pass:
         advanced_results = execute_advanced_analysis(
             project,
@@ -216,8 +227,13 @@ def attempt_post_render_revision(
             analysis_width=min(advanced_analysis_width, width),
         )
         write_model(candidate_dir / "advanced-analysis-results.json", advanced_results)
+        advanced_boundaries_executed = len(advanced_results.boundaries)
         refinement = refine_transition_opportunities(transitions, advanced_results)
         write_model(candidate_dir / "transition-refinement.json", refinement)
+        transition_refinements_applied = sum(
+            boundary.status in {"confirmed", "demoted"}
+            for boundary in refinement.boundaries
+        )
         ctl = compile_ctl(
             revised_edit,
             vir,
@@ -232,9 +248,11 @@ def attempt_post_render_revision(
     export_otio(project, revised_edit, candidate_dir / "edit.otio")
 
     audio_plan: AudioEditPlan | None = None
+    sound_non_sync_selected = 0
     if run_sound_pass:
         sound_report = direct_sound(project, ctl, vir, proxy_dir, max_jl_cuts=max_jl_cuts)
         write_model(candidate_dir / "sound-director.json", sound_report)
+        sound_non_sync_selected = len(sound_report.selected_intents)
         audio_plan = build_sound_directed_audio_plan(project, ctl, sound_report)
         write_model(candidate_dir / "audio-edit-plan.json", audio_plan)
 
@@ -286,7 +304,7 @@ def attempt_post_render_revision(
         changed=True,
         accepted=accepted,
         reason=(
-            "Candidate passed the full post-render Final Critic and was promoted atomically after the baseline was snapshotted."
+            "Candidate passed the full post-render Final Critic and was promoted after the canonical baseline was snapshotted."
             if accepted
             else "Candidate did not reach Final Critic pass; canonical baseline artifacts were left untouched."
         ),
@@ -316,4 +334,7 @@ def attempt_post_render_revision(
         audio_audit=audio_audit,
         render_analysis=render_report,
         audio_plan=audio_plan,
+        advanced_boundaries_executed=advanced_boundaries_executed,
+        transition_refinements_applied=transition_refinements_applied,
+        sound_non_sync_selected=sound_non_sync_selected,
     )
