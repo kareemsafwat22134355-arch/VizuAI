@@ -10,6 +10,7 @@ from .audio_mix_audit import audit_audio_mix
 from .critic import critique_edit
 from .ctl import compile_ctl
 from .director import default_director_plan
+from .final_critic import build_final_critic
 from .ingest import ingest_project
 from .manifest_io import write_model
 from .microscope_models import StyleProfile
@@ -101,15 +102,8 @@ def produce_project(
         write_model(work_dir / f"critic-{iteration:02d}.json", critic)
         revision_iterations = iteration
 
-    # Expensive boundary evidence is intentionally scheduled only after the rough edit
-    # and bounded revision loop are stable, so selected source windows cannot become stale.
     transitions = synthesize_transition_opportunities(edit, vir)
-    advanced_analysis = build_advanced_analysis_plan(
-        ctl,
-        transitions,
-        max_boundaries=max_advanced_boundaries,
-    )
-
+    advanced_analysis = build_advanced_analysis_plan(ctl, transitions, max_boundaries=max_advanced_boundaries)
     write_model(work_dir / "edit-plan.json", edit)
     write_model(work_dir / "transition-opportunities.json", transitions)
     write_model(work_dir / "advanced-analysis-plan.json", advanced_analysis)
@@ -118,29 +112,18 @@ def produce_project(
     transition_refinements_applied = 0
     if run_advanced_pass:
         advanced_results = execute_advanced_analysis(
-            project,
-            advanced_analysis,
-            proxy_dir,
+            project, advanced_analysis, proxy_dir,
             sample_fps=advanced_sample_fps,
             analysis_width=min(advanced_analysis_width, width),
         )
         write_model(work_dir / "advanced-analysis-results.json", advanced_results)
         advanced_boundaries_executed = len(advanced_results.boundaries)
-
         transition_refinement = refine_transition_opportunities(transitions, advanced_results)
         write_model(work_dir / "transition-refinement.json", transition_refinement)
         transition_refinements_applied = sum(
-            boundary.status in {"confirmed", "demoted"}
-            for boundary in transition_refinement.boundaries
+            boundary.status in {"confirmed", "demoted"} for boundary in transition_refinement.boundaries
         )
-        ctl = compile_ctl(
-            edit,
-            vir,
-            fps=fps,
-            width=width,
-            transition_refinement=transition_refinement,
-        )
-        # The final critic must inspect the same CTL that will actually be rendered.
+        ctl = compile_ctl(edit, vir, fps=fps, width=width, transition_refinement=transition_refinement)
         critic = critique_edit(edit, ctl, vir)
 
     write_model(work_dir / "ctl.json", ctl)
@@ -150,13 +133,7 @@ def produce_project(
     audio_plan = None
     sound_non_sync_selected = 0
     if run_sound_pass:
-        sound_report = direct_sound(
-            project,
-            ctl,
-            vir,
-            proxy_dir,
-            max_jl_cuts=max_jl_cuts,
-        )
+        sound_report = direct_sound(project, ctl, vir, proxy_dir, max_jl_cuts=max_jl_cuts)
         write_model(work_dir / "sound-director.json", sound_report)
         sound_non_sync_selected = len(sound_report.selected_intents)
         audio_plan = build_sound_directed_audio_plan(project, ctl, sound_report)
@@ -165,31 +142,26 @@ def produce_project(
     audio_mix_audited = False
     audio_mix_safe: bool | None = None
     mix_warning: str | None = None
+    audio_audit = None
     render_reanalysis_executed = False
     render_integrity_safe: bool | None = None
     render_energy_alignment: float | None = None
     render_findings: list[str] = []
+    render_report = None
 
     if render:
         output = work_dir / "rough-cut.mp4"
-        render_draft(
-            ctl,
-            project,
-            proxy_dir,
-            output,
-            music,
-            audio_plan=audio_plan,
-        )
+        render_draft(ctl, project, proxy_dir, output, music, audio_plan=audio_plan)
         has_rendered_audio = music is not None or (audio_plan is not None and bool(audio_plan.events))
         if has_rendered_audio:
-            audit = audit_audio_mix(output, safety_threshold_dbfs=audio_safety_threshold_dbfs)
-            write_model(work_dir / "audio-mix-audit.json", audit)
+            audio_audit = audit_audio_mix(output, safety_threshold_dbfs=audio_safety_threshold_dbfs)
+            write_model(work_dir / "audio-mix-audit.json", audio_audit)
             audio_mix_audited = True
-            audio_mix_safe = audit.clipping_safe
-            if not audit.clipping_safe:
+            audio_mix_safe = audio_audit.clipping_safe
+            if not audio_audit.clipping_safe:
                 mix_warning = (
-                    f"Rendered audio mix failed headroom gate: max={audit.max_volume_dbfs:.1f} dBFS "
-                    f"> threshold={audit.safety_threshold_dbfs:.1f} dBFS."
+                    f"Rendered audio mix failed headroom gate: max={audio_audit.max_volume_dbfs:.1f} dBFS "
+                    f"> threshold={audio_audit.safety_threshold_dbfs:.1f} dBFS."
                 )
 
         if run_render_reanalysis:
@@ -207,20 +179,16 @@ def produce_project(
             render_energy_alignment = render_report.energy_alignment
             render_findings = [
                 f"Render re-analysis [{finding.severity}] {finding.message}"
-                for finding in render_report.findings
-                if finding.severity in {"warning", "error"}
+                for finding in render_report.findings if finding.severity in {"warning", "error"}
             ]
 
+    final_critic = build_final_critic(critic, render_analysis=render_report, audio_audit=audio_audit)
+    write_model(work_dir / "final-critic-report.json", final_critic)
+
     artifacts = [
-        "project.monter.json",
-        "vir.monter.json",
-        "director-plan.json",
-        "edit-plan.json",
-        "ctl.json",
-        "critic-report.json",
-        "transition-opportunities.json",
-        "advanced-analysis-plan.json",
-        "edit.otio",
+        "project.monter.json", "vir.monter.json", "director-plan.json", "edit-plan.json",
+        "ctl.json", "critic-report.json", "final-critic-report.json",
+        "transition-opportunities.json", "advanced-analysis-plan.json", "edit.otio",
     ]
     if audio:
         artifacts.append("audio-analysis.json")
@@ -241,14 +209,9 @@ def produce_project(
         warnings.append(mix_warning)
     warnings.extend(render_findings)
 
-    production_passed = (
-        critic.status == "pass"
-        and audio_mix_safe is not False
-        and render_integrity_safe is not False
-    )
     report = ProductionReport(
         project_id=project.project_id,
-        status="pass" if production_passed else "needs_review",
+        status="pass" if final_critic.status == "pass" else "needs_review",
         revision_iterations=revision_iterations,
         assets_ingested=len(project.assets),
         shots_analyzed=len(vir.shots),
