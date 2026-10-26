@@ -9,7 +9,7 @@ from .critic import critique_edit
 from .ctl import compile_ctl
 from .director import default_director_plan
 from .ingest import ingest_project
-from .manifest_io import load_ctl, load_edit_plan, load_project, load_vir, write_model
+from .manifest_io import load_ctl, load_edit_plan, load_project, load_style_profile, load_vir, write_model
 from .otio_export import export_otio
 from .planner import build_edit_plan
 from .production import produce_project
@@ -26,13 +26,21 @@ def add_shared_media_args(parser: argparse.ArgumentParser) -> None:
 def add_plan_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--duration", type=float, default=15.0, help="target edit duration in seconds")
     parser.add_argument("--music", default=None, help="optional music track for beat/onset analysis")
+    parser.add_argument("--style-profile", default=None, help="optional microscope StyleProfile JSON used as a soft cadence prior")
 
 
-def write_planning_outputs(vir_path: Path, out_dir: Path, duration: float, music: str | None):
+def write_planning_outputs(
+    vir_path: Path,
+    out_dir: Path,
+    duration: float,
+    music: str | None,
+    style_profile_path: str | None = None,
+):
     vir = load_vir(vir_path)
     director = default_director_plan(duration)
     audio = analyze_audio(Path(music)) if music else None
-    edit_plan = build_edit_plan(vir, director, audio)
+    style_profile = load_style_profile(Path(style_profile_path)) if style_profile_path else None
+    edit_plan = build_edit_plan(vir, director, audio, style_profile=style_profile)
 
     out_dir.mkdir(parents=True, exist_ok=True)
     write_model(out_dir / "director-plan.json", director)
@@ -143,7 +151,7 @@ def main() -> None:
         return
 
     if args.command == "plan":
-        write_planning_outputs(Path(args.vir), Path(args.out_dir), args.duration, args.music)
+        write_planning_outputs(Path(args.vir), Path(args.out_dir), args.duration, args.music, args.style_profile)
         return
 
     if args.command == "compile":
@@ -204,6 +212,7 @@ def main() -> None:
             fps=args.fps,
             max_revision_iterations=args.max_revisions,
             render=not args.no_render,
+            style_profile=load_style_profile(Path(args.style_profile)) if args.style_profile else None,
         )
         print(
             f"Production {report.status}: {report.assets_ingested} assets, {report.shots_analyzed} shots, "
@@ -226,7 +235,7 @@ def main() -> None:
         vir = analyze_project(project, proxy_dir, cache_dir=cache_dir)
         write_model(vir_path, vir)
         print(f"Prepared media: {project.project_name}: {len(project.assets)} assets, {len(vir.shots)} shots, {len(vir.warnings)} warnings")
-        edit_plan = write_planning_outputs(vir_path, work_dir, args.duration, args.music)
+        edit_plan = write_planning_outputs(vir_path, work_dir, args.duration, args.music, args.style_profile)
         ctl = compile_ctl(edit_plan, vir, fps=args.fps, width=args.width)
         write_model(work_dir / "ctl.json", ctl)
         print(f"CTL ready: {len(ctl.clips)} clips, {len(ctl.transitions)} boundaries")

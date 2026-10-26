@@ -88,7 +88,24 @@ monter-style-profile microscope-01.json microscope-02.json microscope-03.json \
   --out "kareem-style-profile.json"
 ```
 
-The style profile is research data for future Director/Planner policy and regression testing. It is not a preset and it should not force every future edit to imitate the same cutting rate or transition behavior.
+The style profile is a research prior, not a preset. It should influence decisions proportionally to its confidence rather than forcing every future edit to imitate one fixed rhythm.
+
+## Feed the style prior back into planning
+
+`plan`, `prepare`, and `produce` can accept a StyleProfile as a **soft cadence prior**:
+
+```bash
+monter produce "D:/Project/RAW" \
+  --name "Trailer" \
+  --music "D:/Project/music.wav" \
+  --duration 15 \
+  --style-profile "kareem-style-profile.json" \
+  --work-dir ".monter"
+```
+
+In v0.11 the style prior changes cutting density only. MONTER blends the default segment count toward the profile's observed median shot duration according to profile confidence, with a bounded 4–12 segment safety range. The Director's dramatic energy curve is left untouched. This is intentional: taste data can influence cadence without overriding the video's narrative arc.
+
+The resulting `edit-plan.json` records the baseline segment count, style-adjusted count, profile confidence, and observed median shot duration in `strategyNotes`, so the influence is inspectable rather than hidden.
 
 The current baseline uses PySceneDetect, low-resolution streaming OpenCV optical flow, librosa audio analysis, typed CTL, FFmpeg draft rendering and OpenTimelineIO export. The critic keeps quality dimensions separate and can run a bounded targeted revision loop instead of endlessly regenerating the edit.
 
