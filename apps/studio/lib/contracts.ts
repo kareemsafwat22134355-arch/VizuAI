@@ -3,6 +3,7 @@ export type MotionLevel = "low" | "medium" | "high";
 export type MediaAsset = {
   id: string;
   filename: string;
+  sourceRelPath: string;
   durationSeconds: number;
   width: number | null;
   height: number | null;
