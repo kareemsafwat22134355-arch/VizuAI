@@ -3,11 +3,19 @@ from __future__ import annotations
 from .analysis_models import VirProject
 from .ctl_models import CtlClip, CtlProgram, CtlTransition
 from .cut_signature import build_cut_signature
+from .models import MonterProject
 from .planning_models import EditPlan
+from .sound import select_audio_boundaries
 from .timewarp import select_timewarp_intents
 
 
-def compile_ctl(edit_plan: EditPlan, vir: VirProject, fps: int = 24, width: int = 960) -> CtlProgram:
+def compile_ctl(
+    edit_plan: EditPlan,
+    vir: VirProject,
+    fps: int = 24,
+    width: int = 960,
+    project: MonterProject | None = None,
+) -> CtlProgram:
     shots = {shot.id: shot for shot in vir.shots}
     clips = [
         CtlClip(
@@ -63,12 +71,16 @@ def compile_ctl(edit_plan: EditPlan, vir: VirProject, fps: int = 24, width: int 
             reason=reason,
         ))
 
+    time_warps = select_timewarp_intents(edit_plan, vir, max_intents=2)
+    audio_boundaries = select_audio_boundaries(edit_plan, project, time_warps, max_intents=1) if project else []
+
     return CtlProgram(
         project_id=edit_plan.project_id,
         duration_seconds=edit_plan.actual_duration_seconds,
         clips=clips,
         transitions=transitions,
-        time_warps=select_timewarp_intents(edit_plan, vir, max_intents=2),
+        time_warps=time_warps,
+        audio_boundaries=audio_boundaries,
         render_fps=fps,
         render_width=width,
     )
