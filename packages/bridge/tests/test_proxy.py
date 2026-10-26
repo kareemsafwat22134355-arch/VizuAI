@@ -11,3 +11,6 @@ def test_proxy_command_is_analysis_friendly():
     assert "fps=24" in joined
     assert "-crf 28" in joined
     assert "-preset veryfast" in joined
+    assert "-map 0:v:0" in joined
+    assert "-map 0:a?" in joined
+    assert "-sn -dn" in joined
