@@ -22,17 +22,18 @@ MONTER should reuse mature open-source infrastructure when it accelerates develo
 - Adopted line: 0.18.x.
 - Why: industry timeline model with external-media references; VIR and CTL remain independent MONTER contracts.
 
-## Planned
-
 ### wavesurfer.js
-- Role: waveform, timeline marks and editorial audio regions inside Studio.
+- Role: local music waveform inspection inside Studio.
 - License: BSD-3-Clause.
-- Status: use when the audio inspection view is introduced.
+- Adopted version: 8.0.3.
+- Why: waveform rendering is commodity UI infrastructure and can operate against browser-local object URLs without uploading source audio.
+
+## Re-evaluate later
 
 ### Media Chrome
-- Role: accessible, framework-compatible preview-player controls.
+- Role considered: accessible preview-player controls.
 - License: MIT.
-- Status: use when Studio gains synchronized media preview.
+- Current decision: do not add a dependency yet. Media Chrome currently recommends Video.js for new projects; MONTER uses the native video element behind a small UI boundary until richer player requirements justify a player framework.
 
 ## Reference only
 
