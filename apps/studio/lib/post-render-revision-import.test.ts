@@ -33,6 +33,7 @@ function bundle(reportProjectId = "p") {
     baselineAutomaticCandidates: 1,
     candidateAutomaticCandidates: 1,
     changedSegments: ["s1"],
+    changedBoundaries: [2],
     candidateDir: "post-render-candidate-01",
     baselineSnapshotDir: null,
     promotedArtifacts: [],
@@ -46,11 +47,12 @@ function bundle(reportProjectId = "p") {
 }
 
 describe("post-render revision bundle import", () => {
-  it("keeps acceptance/rejection evidence available without candidate media", async () => {
+  it("keeps acceptance/rejection and changed-boundary evidence without candidate media", async () => {
     const result = await importMonterBundle(bundle());
     expect(result.postRenderRevision?.attempted).toBe(true);
     expect(result.postRenderRevision?.accepted).toBe(false);
     expect(result.postRenderRevision?.changedSegments).toEqual(["s1"]);
+    expect(result.postRenderRevision?.changedBoundaries).toEqual([2]);
     expect(result.ignoredEntries).not.toContain("post-render-revision-report.json");
   });
 
