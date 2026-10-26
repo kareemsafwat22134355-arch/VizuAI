@@ -73,6 +73,7 @@ def test_produce_real_media_end_to_end(tmp_path: Path):
         "ctl.json",
         "critic-report.json",
         "transition-opportunities.json",
+        "advanced-analysis-plan.json",
         "production-report.json",
         "edit.otio",
         "rough-cut.mp4",
@@ -87,6 +88,14 @@ def test_produce_real_media_end_to_end(tmp_path: Path):
         any(candidate["mechanism"] == "hard_cut" for candidate in boundary["candidates"])
         for boundary in opportunities["boundaries"]
     )
+
+    advanced = json.loads((work / "advanced-analysis-plan.json").read_text(encoding="utf-8"))
+    assert advanced["schemaVersion"] == "advanced-analysis-plan-0.1"
+    assert advanced["projectId"] == report.project_id
+    assert advanced["maxBoundaries"] == 4
+    valid_features = {"dense_flow", "depth", "segmentation"}
+    assert all(request["boundaryIndex"] >= 1 for request in advanced["requests"])
+    assert all(set(request["requestedFeatures"]).issubset(valid_features) for request in advanced["requests"])
 
     manifest = json.loads((work / "project.monter.json").read_text(encoding="utf-8"))
     assert len(manifest["assets"]) == 3
@@ -107,5 +116,6 @@ def test_produce_real_media_end_to_end(tmp_path: Path):
         names = archive.namelist()
         assert "project.monter.json" in names
         assert "transition-opportunities.json" in names
+        assert "advanced-analysis-plan.json" in names
         assert "rough-cut.mp4" in names
         assert all(not name.startswith("proxies/") for name in names)
