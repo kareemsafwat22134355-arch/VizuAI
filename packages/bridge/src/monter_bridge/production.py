@@ -16,6 +16,8 @@ from .manifest_io import write_model
 from .microscope_models import StyleProfile
 from .otio_export import export_otio
 from .planner import build_edit_plan
+from .post_render_revision import attempt_post_render_revision
+from .post_render_revision_models import PostRenderRevisionReport
 from .production_models import ProductionReport
 from .proxy import create_project_proxies
 from .render import render_draft
@@ -47,6 +49,7 @@ def produce_project(
     run_render_reanalysis: bool = True,
     render_analysis_sample_fps: float = 4.0,
     render_analysis_width: int = 320,
+    run_post_render_revision: bool = True,
 ) -> ProductionReport:
     if max_revision_iterations < 0 or max_revision_iterations > 4:
         raise ValueError("max_revision_iterations must be between 0 and 4")
@@ -141,12 +144,10 @@ def produce_project(
 
     audio_mix_audited = False
     audio_mix_safe: bool | None = None
-    mix_warning: str | None = None
     audio_audit = None
     render_reanalysis_executed = False
     render_integrity_safe: bool | None = None
     render_energy_alignment: float | None = None
-    render_findings: list[str] = []
     render_report = None
 
     if render:
@@ -158,11 +159,6 @@ def produce_project(
             write_model(work_dir / "audio-mix-audit.json", audio_audit)
             audio_mix_audited = True
             audio_mix_safe = audio_audit.clipping_safe
-            if not audio_audit.clipping_safe:
-                mix_warning = (
-                    f"Rendered audio mix failed headroom gate: max={audio_audit.max_volume_dbfs:.1f} dBFS "
-                    f"> threshold={audio_audit.safety_threshold_dbfs:.1f} dBFS."
-                )
 
         if run_render_reanalysis:
             render_report = analyze_render(
@@ -177,17 +173,71 @@ def produce_project(
             render_reanalysis_executed = True
             render_integrity_safe = render_report.status == "pass"
             render_energy_alignment = render_report.energy_alignment
-            render_findings = [
-                f"Render re-analysis [{finding.severity}] {finding.message}"
-                for finding in render_report.findings if finding.severity in {"warning", "error"}
-            ]
 
     final_critic = build_final_critic(critic, render_analysis=render_report, audio_audit=audio_audit)
     write_model(work_dir / "final-critic-report.json", final_critic)
 
+    post_render_report: PostRenderRevisionReport
+    accepted_state = None
+    if run_post_render_revision and render and run_render_reanalysis:
+        post_render_report, accepted_state = attempt_post_render_revision(
+            project=project,
+            vir=vir,
+            director=director,
+            baseline_edit=edit,
+            baseline_editorial_critic=critic,
+            baseline_final_critic=final_critic,
+            work_dir=work_dir,
+            proxy_dir=proxy_dir,
+            music=music,
+            width=width,
+            fps=fps,
+            run_advanced_pass=run_advanced_pass,
+            max_advanced_boundaries=max_advanced_boundaries,
+            advanced_sample_fps=advanced_sample_fps,
+            advanced_analysis_width=advanced_analysis_width,
+            run_sound_pass=run_sound_pass,
+            max_jl_cuts=max_jl_cuts,
+            audio_safety_threshold_dbfs=audio_safety_threshold_dbfs,
+            render_analysis_sample_fps=render_analysis_sample_fps,
+            render_analysis_width=render_analysis_width,
+        )
+    else:
+        post_render_report = PostRenderRevisionReport(
+            project_id=project.project_id,
+            eligible=False,
+            attempted=False,
+            changed=False,
+            accepted=False,
+            reason=(
+                "Post-render revision requires render + render re-analysis and must not be disabled explicitly."
+            ),
+            baseline_final_status=final_critic.status,
+            baseline_automatic_candidates=final_critic.automatic_revision_candidates,
+            notes=["No post-render candidate was created."],
+        )
+    write_model(work_dir / "post-render-revision-report.json", post_render_report)
+
+    if accepted_state is not None:
+        edit = accepted_state.edit
+        ctl = accepted_state.ctl
+        critic = accepted_state.critic
+        final_critic = accepted_state.final_critic
+        audio_audit = accepted_state.audio_audit
+        render_report = accepted_state.render_analysis
+        audio_plan = accepted_state.audio_plan
+        advanced_boundaries_executed = accepted_state.advanced_boundaries_executed
+        transition_refinements_applied = accepted_state.transition_refinements_applied
+        sound_non_sync_selected = accepted_state.sound_non_sync_selected
+        audio_mix_audited = audio_audit is not None
+        audio_mix_safe = audio_audit.clipping_safe if audio_audit is not None else None
+        render_reanalysis_executed = True
+        render_integrity_safe = render_report.status == "pass"
+        render_energy_alignment = render_report.energy_alignment
+
     artifacts = [
         "project.monter.json", "vir.monter.json", "director-plan.json", "edit-plan.json",
-        "ctl.json", "critic-report.json", "final-critic-report.json",
+        "ctl.json", "critic-report.json", "final-critic-report.json", "post-render-revision-report.json",
         "transition-opportunities.json", "advanced-analysis-plan.json", "edit.otio",
     ]
     if audio:
@@ -205,14 +255,26 @@ def produce_project(
 
     warnings = list(vir.warnings)
     warnings.extend(finding.message for finding in critic.findings if finding.severity == "error")
-    if mix_warning:
-        warnings.append(mix_warning)
-    warnings.extend(render_findings)
+    if audio_audit is not None and not audio_audit.clipping_safe:
+        warnings.append(
+            f"Rendered audio mix failed headroom gate: max={audio_audit.max_volume_dbfs:.1f} dBFS "
+            f"> threshold={audio_audit.safety_threshold_dbfs:.1f} dBFS."
+        )
+    if render_report is not None:
+        warnings.extend(
+            f"Render re-analysis [{finding.severity}] {finding.message}"
+            for finding in render_report.findings if finding.severity in {"warning", "error"}
+        )
+    if post_render_report.attempted and not post_render_report.accepted:
+        warnings.append(f"Post-render revision candidate rejected: {post_render_report.reason}")
 
     report = ProductionReport(
         project_id=project.project_id,
         status="pass" if final_critic.status == "pass" else "needs_review",
         revision_iterations=revision_iterations,
+        post_render_revision_attempted=post_render_report.attempted,
+        post_render_revision_accepted=post_render_report.accepted,
+        post_render_revision_count=1 if post_render_report.attempted else 0,
         assets_ingested=len(project.assets),
         shots_analyzed=len(vir.shots),
         edit_segments=len(edit.segments),
