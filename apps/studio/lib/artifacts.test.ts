@@ -32,6 +32,44 @@ describe("MONTER artifact parser", () => {
     expect(bundle.vir?.projectId).toBe("p1");
   });
 
+  it("accepts CTL v0.2 while keeping v0.1 backward compatibility", () => {
+    const ctlV2 = {
+      schemaVersion: "ctl-0.2",
+      projectId: "p1",
+      durationSeconds: 4,
+      clips: [],
+      transitions: [
+        {
+          boundaryIndex: 1,
+          mechanism: "directional_bridge",
+          durationSeconds: 0.12,
+          parameters: { screenDirection: "right" },
+          reason: "fixture",
+        },
+      ],
+      renderFps: 24,
+      renderWidth: 960,
+    };
+    const ctlV1 = { ...ctlV2, schemaVersion: "ctl-0.1", transitions: [] };
+
+    expect(parseArtifact("ctl.json", ctlV2).ctl?.schemaVersion).toBe("ctl-0.2");
+    expect(parseArtifact("ctl.json", ctlV1).ctl?.schemaVersion).toBe("ctl-0.1");
+  });
+
+  it("merges CTL v0.2 into the same project bundle", () => {
+    const ctl = {
+      schemaVersion: "ctl-0.2",
+      projectId: "p1",
+      durationSeconds: 4,
+      clips: [],
+      transitions: [],
+      renderFps: 24,
+      renderWidth: 960,
+    };
+    const bundle = mergeArtifacts(mergeArtifacts({}, "project.monter.json", project), "ctl.json", ctl);
+    expect(bundle.ctl?.projectId).toBe("p1");
+  });
+
   it("rejects cross-project artifact bundles", () => {
     const otherVir = { ...vir, projectId: "p2" };
     const bundle = mergeArtifacts({}, "project.monter.json", project);
