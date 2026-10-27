@@ -3,9 +3,11 @@ from __future__ import annotations
 from .advanced_analysis_models import (
     AdvancedAnalysisPlan,
     BoundaryAnalysisRequest,
+    SegmentationPromptContext,
     SkippedBoundary,
     SourceAnalysisWindow,
 )
+from .analysis_models import OcclusionCueSample
 from .ctl_models import CtlProgram
 from .transition_opportunities import BoundaryTransitionOpportunity, TransitionOpportunityReport
 
@@ -46,11 +48,46 @@ def _windows(ctl: CtlProgram, boundary: BoundaryTransitionOpportunity, radius: f
     return left_window, right_window, left, right
 
 
-def _segmentation_motivated(boundary: BoundaryTransitionOpportunity) -> bool:
-    return (
-        boundary.occlusion_side != "none"
-        and boundary.occlusion_candidate_score >= OCCLUSION_SEGMENTATION_THRESHOLD
+def _prompt_from_seed(
+    seed: OcclusionCueSample | None,
+    side: str,
+) -> SegmentationPromptContext | None:
+    if seed is None or seed.score < OCCLUSION_SEGMENTATION_THRESHOLD:
+        return None
+    bbox = seed.largest_component_bbox_xywh_norm
+    centroid = seed.largest_component_centroid_xy_norm
+    if bbox is None or centroid is None:
+        return None
+    x, y, width, height = bbox
+    if width <= 0 or height <= 0:
+        return None
+    return SegmentationPromptContext(
+        side=side,  # type: ignore[arg-type]
+        source_time_seconds=seed.time_seconds,
+        point_xy_norm=list(centroid),
+        box_xyxy_norm=[
+            x,
+            y,
+            min(1.0, x + width),
+            min(1.0, y + height),
+        ],
+        confidence=seed.score,
+        occlusion_score=seed.score,
+        dominant_edge=seed.dominant_edge,
     )
+
+
+def _segmentation_prompt_contexts(
+    boundary: BoundaryTransitionOpportunity,
+) -> tuple[SegmentationPromptContext | None, SegmentationPromptContext | None]:
+    left_prompt = _prompt_from_seed(boundary.outgoing_occlusion_seed, "left")
+    right_prompt = _prompt_from_seed(boundary.incoming_occlusion_seed, "right")
+    return left_prompt, right_prompt
+
+
+def _segmentation_motivated(boundary: BoundaryTransitionOpportunity) -> bool:
+    left_prompt, right_prompt = _segmentation_prompt_contexts(boundary)
+    return left_prompt is not None or right_prompt is not None
 
 
 def _features_with_segmentation(
@@ -69,10 +106,16 @@ def _reason_with_segmentation(
 ) -> str:
     if not _segmentation_motivated(boundary):
         return reason
+    left_prompt, right_prompt = _segmentation_prompt_contexts(boundary)
+    prompted_sides = [
+        side
+        for side, prompt in (("outgoing", left_prompt), ("incoming", right_prompt))
+        if prompt is not None
+    ]
     return (
         f"{reason} Cheap camera-compensated occlusion evidence scores "
-        f"{boundary.occlusion_candidate_score:.2f} on the {boundary.occlusion_side} side "
-        f"({boundary.occlusion_edge} edge), so segmentation is selectively requested to verify a real foreground mask."
+        f"{boundary.occlusion_candidate_score:.2f}; validated residual-component geometry exists on "
+        f"{', '.join(prompted_sides)}, so segmentation is selectively requested only for those side(s)."
     )
 
 
@@ -88,6 +131,7 @@ def _request_for_boundary(
 
     signature = boundary.cut_signature
     left_window, right_window, left_clip, right_clip = _windows(ctl, boundary)
+    left_prompt, right_prompt = _segmentation_prompt_contexts(boundary)
     evidence: dict[str, float | str | bool] = {
         "recommendedMechanism": boundary.recommended_mechanism,
         "relationScore": signature.relation_score,
@@ -102,6 +146,13 @@ def _request_for_boundary(
         "occlusionCandidateScore": boundary.occlusion_candidate_score,
         "occlusionSide": boundary.occlusion_side,
         "occlusionEdge": boundary.occlusion_edge,
+        "leftSegmentationPrompt": left_prompt is not None,
+        "rightSegmentationPrompt": right_prompt is not None,
+    }
+
+    request_kwargs = {
+        "left_segmentation_prompt": left_prompt,
+        "right_segmentation_prompt": right_prompt,
     }
 
     if boundary.recommended_mechanism == "zoom_bridge":
@@ -117,6 +168,7 @@ def _request_for_boundary(
                 boundary,
             ),
             evidence=evidence,
+            **request_kwargs,
         )
 
     if boundary.recommended_mechanism == "directional_bridge":
@@ -134,6 +186,7 @@ def _request_for_boundary(
                     boundary,
                 ),
                 evidence=evidence,
+                **request_kwargs,
             )
 
     if boundary.recommended_mechanism == "action_cut" and (
@@ -157,6 +210,7 @@ def _request_for_boundary(
             right_window=right_window,
             reason=_reason_with_segmentation(base_reason, boundary),
             evidence=evidence,
+            **request_kwargs,
         )
 
     if _segmentation_motivated(boundary):
@@ -172,6 +226,7 @@ def _request_for_boundary(
                 boundary,
             ),
             evidence=evidence,
+            **request_kwargs,
         )
 
     return None
@@ -242,7 +297,8 @@ def build_advanced_analysis_plan(
         skipped_boundaries=sorted(skipped, key=lambda item: item.boundary_index),
         notes=[
             "This plan schedules expensive analysis only; it does not execute model backends.",
-            "Segmentation is requested only when cheap camera-compensated edge/foreground evidence crosses the occlusion threshold; the cue is not treated as a mask.",
+            "Segmentation is requested only when cheap camera-compensated foreground evidence crosses the threshold and the same residual component provides valid normalized prompt geometry.",
+            "Segmentation prompt contexts preserve source time, point, box, confidence, edge, and provenance independently from any concrete model API.",
             "Depth is currently requested only for feasible zoom-bridge opportunities.",
             "Dense flow is limited to ambiguous action/directional boundaries, depth-assisted zoom candidates, or mandatory post-revision verification.",
             "Post-render action-timing revision boundaries are forced into dense-flow verification even when cheap phase evidence becomes near-certain; mandatory verification may consume the configured budget before optional boundaries.",
