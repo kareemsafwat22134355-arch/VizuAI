@@ -36,6 +36,7 @@ AUTO_REVISION_CODES = {
     "immediate_repetition",
     "motion_match_timing_weak",
     "motion_match_boundary_roll_needed",
+    "action_cut_timing_shift_needed",
 }
 
 PROMOTABLE_ARTIFACTS = (

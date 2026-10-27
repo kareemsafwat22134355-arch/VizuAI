@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 
+from .action_cut_roll import propose_action_cut_boundary_roll
 from .analysis_models import VirProject
 from .ctl_models import CtlProgram
 from .critic_models import CriticFinding, CriticMetric, CriticReport
@@ -16,6 +17,7 @@ CORE_REVISION_METRICS = {
     "adjacent_repeat_count",
     "recoverable_motion_match_timing_count",
     "recoverable_motion_match_roll_count",
+    "recoverable_advanced_action_timing_count",
 }
 
 
@@ -111,10 +113,11 @@ def critique_edit(edit: EditPlan, ctl: CtlProgram, vir: VirProject) -> CriticRep
             message="Every boundary is labeled with a mechanism; preserve at least one deliberate hard cut.",
         ))
 
-    # Timing repair is deliberately scoped to existing motion_match_cut boundaries.
+    warped_segment_ids = {warp.segment_id for warp in ctl.time_warps}
+
+    # Cheap motion-match timing repair remains scoped to motion_match_cut boundaries.
     # Slip is preferred because it preserves segment durations. Roll is considered only
     # when a safe slip is not feasible and both sides support the same boundary nudge.
-    warped_segment_ids = {warp.segment_id for warp in ctl.time_warps}
     recoverable_motion_match_timing = 0
     recoverable_motion_match_roll = 0
     for transition in ctl.transitions:
@@ -173,6 +176,54 @@ def critique_edit(edit: EditPlan, ctl: CtlProgram, vir: VirProject) -> CriticRep
         passed=recoverable_motion_match_roll == 0,
     ))
 
+    # v0.29 consumes only explicit, reliable v0.28 advanced timing evidence. The
+    # refinement layer stays non-mutating; the critic turns a feasible common shift
+    # into a typed revision request only after source/timeline bounds are rechecked.
+    recoverable_advanced_action_timing = 0
+    for transition in ctl.transitions:
+        if transition.mechanism != "motion_peak_cut":
+            continue
+        boundary_index = transition.boundary_index
+        if boundary_index < 1 or boundary_index >= len(edit.segments):
+            continue
+        left = edit.segments[boundary_index - 1]
+        right = edit.segments[boundary_index]
+        if left.id in warped_segment_ids or right.id in warped_segment_ids:
+            continue
+        evidence = transition.evidence
+        if evidence.get("advancedRefinementStatus") != "unchanged":
+            continue
+        if evidence.get("advancedBaseMechanism") != "action_cut":
+            continue
+        if evidence.get("advancedRefinedMechanism") != "action_cut":
+            continue
+        suggested = evidence.get("advancedSuggestedBoundaryShiftSeconds")
+        if not isinstance(suggested, (int, float)):
+            continue
+        proposal = propose_action_cut_boundary_roll(edit, vir, boundary_index, float(suggested))
+        if proposal is None:
+            continue
+
+        recoverable_advanced_action_timing += 1
+        findings.append(CriticFinding(
+            code="action_cut_timing_shift_needed",
+            severity="warning",
+            boundary_index=boundary_index,
+            suggested_shift_seconds=proposal.boundary_shift_seconds,
+            message=(
+                f"Selective dense flow supports the action-cut intent at boundary {boundary_index}, but both sides "
+                f"indicate a common local roll of {proposal.boundary_shift_seconds:+.3f}s. Physical bounds allow "
+                "the shift without changing total sequence duration."
+            ),
+        ))
+
+    metrics.append(CriticMetric(
+        name="recoverable_advanced_action_timing_count",
+        value=float(recoverable_advanced_action_timing),
+        target="0 advanced action cuts with a still-unapplied reliable timing shift",
+        passed=recoverable_advanced_action_timing == 0,
+    ))
+
     if vir.warnings:
         findings.append(CriticFinding(
             code="analysis_warnings", severity="warning",
@@ -191,6 +242,7 @@ def critique_edit(edit: EditPlan, ctl: CtlProgram, vir: VirProject) -> CriticRep
         notes=[
             "Metrics remain separate by design; MONTER does not collapse editorial quality into one aggregate score.",
             "Core metric failures trigger a bounded revision pass; other warnings can remain intentional editorial choices.",
-            "Motion-match timing repair prefers source-window slip; a bounded timeline roll is considered only as fallback, and deliberate hard cuts/timewarp-adjacent boundaries remain protected.",
+            "Motion-match timing repair prefers source-window slip, then bounded roll fallback; deliberate hard cuts/timewarp-adjacent boundaries remain protected.",
+            "Reliable temporal dense-flow evidence may request a bounded action-cut roll, but only after the critic rechecks physical edit feasibility.",
         ],
     )

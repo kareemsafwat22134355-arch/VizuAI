@@ -22,6 +22,7 @@ class FinalCriticFinding(PortableModel):
     source_artifact: str
     segment_id: str | None = None
     boundary_index: int | None = None
+    suggested_shift_seconds: float | None = None
 
 
 class FinalCriticMetric(PortableModel):

@@ -73,6 +73,7 @@ export type FinalCriticReport = {
     sourceArtifact: string;
     segmentId?: string | null;
     boundaryIndex?: number | null;
+    suggestedShiftSeconds?: number | null;
   }>;
   notes: string[];
 };
