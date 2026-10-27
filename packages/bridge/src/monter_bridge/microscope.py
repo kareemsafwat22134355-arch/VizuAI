@@ -14,6 +14,7 @@ from .ffprobe import probe_media
 from .global_motion import summarize_global_motion
 from .microscope_models import MicroscopeReport, ObservedCut, StyleProfile
 from .motion import build_motion_anchors
+from .occlusion import summarize_occlusion
 from .planning_models import EditSegment
 from .shots import detect_shots
 
@@ -100,7 +101,7 @@ def inspect_finished_video(video_path: Path, source_label: str | None = None) ->
 
     shots: list[ShotAnalysis] = []
     for index, shot_range in enumerate(ranges):
-        motion_samples, global_samples = sample_motion_signals(video_path, shot_range)
+        motion_samples, global_samples, occlusion_samples = sample_motion_signals(video_path, shot_range)
         magnitudes = [sample.magnitude for sample in motion_samples]
         shots.append(
             ShotAnalysis(
@@ -112,6 +113,7 @@ def inspect_finished_video(video_path: Path, source_label: str | None = None) ->
                 motion_samples=motion_samples,
                 edit_anchors=build_motion_anchors(motion_samples, shot_range),
                 global_motion=summarize_global_motion(global_samples),
+                occlusion=summarize_occlusion(occlusion_samples),
             )
         )
 
