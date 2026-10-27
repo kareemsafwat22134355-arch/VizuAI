@@ -25,8 +25,6 @@ def _windows(ctl: CtlProgram, boundary: BoundaryTransitionOpportunity, radius: f
     left = ctl.clips[left_index]
     right = ctl.clips[right_index]
 
-    # Stay inside the chosen source ranges except for handles already verified by
-    # transition-opportunity synthesis. No advanced request may invent source time.
     left_after = min(boundary.outgoing_handle_seconds, radius)
     right_before = min(boundary.incoming_handle_seconds, radius)
     left_window = SourceAnalysisWindow(
@@ -49,6 +47,8 @@ def _windows(ctl: CtlProgram, boundary: BoundaryTransitionOpportunity, radius: f
 def _request_for_boundary(
     ctl: CtlProgram,
     boundary: BoundaryTransitionOpportunity,
+    *,
+    force_action_verification: bool = False,
 ) -> BoundaryAnalysisRequest | None:
     candidate = _candidate(boundary)
     if candidate is None or not candidate.feasible:
@@ -69,8 +69,6 @@ def _request_for_boundary(
         "rightSourceInSeconds": right_clip.source_in_seconds,
     }
 
-    # Depth is currently useful only where a scale relation already exists. It is
-    # deliberately not scheduled across all media or all transitions.
     if boundary.recommended_mechanism == "zoom_bridge":
         priority = min(1.0, 0.55 * candidate.motivation_score + 0.30 * candidate.feasibility_score + 0.15 * signature.global_motion_confidence)
         return BoundaryAnalysisRequest(
@@ -83,8 +81,6 @@ def _request_for_boundary(
             evidence=evidence,
         )
 
-    # Borderline directional bridges benefit from dense local flow validation.
-    # Very strong global-motion matches are intentionally left cheap.
     if boundary.recommended_mechanism == "directional_bridge":
         borderline = signature.relation_score < 0.75 or signature.global_motion_confidence < 0.65
         if not borderline:
@@ -100,17 +96,25 @@ def _request_for_boundary(
             evidence=evidence,
         )
 
-    # Action cuts only need expensive refinement when the cheap phase score is
-    # plausible but not already near-certain.
-    if boundary.recommended_mechanism == "action_cut" and 0.6 <= signature.phase_compatibility < 0.9:
-        priority = min(1.0, 0.45 + 0.35 * candidate.motivation_score + 0.20 * candidate.feasibility_score)
+    if boundary.recommended_mechanism == "action_cut" and (
+        force_action_verification or 0.6 <= signature.phase_compatibility < 0.9
+    ):
+        evidence["forcedRevisionVerification"] = force_action_verification
+        priority = 1.0 if force_action_verification else min(
+            1.0,
+            0.45 + 0.35 * candidate.motivation_score + 0.20 * candidate.feasibility_score,
+        )
         return BoundaryAnalysisRequest(
             boundary_index=boundary.boundary_index,
             priority=priority,
             requested_features=["dense_flow"],
             left_window=left_window,
             right_window=right_window,
-            reason="The cheap motion-phase signal supports cut-on-action but is not decisive; dense flow can refine the event timing inside a narrow boundary window.",
+            reason=(
+                "A post-render timing revision changed this action boundary; dense flow is mandatory to verify the revised cut location before candidate promotion."
+                if force_action_verification
+                else "The cheap motion-phase signal supports cut-on-action but is not decisive; dense flow can refine the event timing inside a narrow boundary window."
+            ),
             evidence=evidence,
         )
 
@@ -121,12 +125,15 @@ def build_advanced_analysis_plan(
     ctl: CtlProgram,
     opportunities: TransitionOpportunityReport,
     max_boundaries: int = 4,
+    forced_action_boundaries: set[int] | None = None,
 ) -> AdvancedAnalysisPlan:
     if ctl.project_id != opportunities.project_id:
         raise ValueError("CTL projectId does not match transition opportunity report")
     if max_boundaries < 1:
         raise ValueError("max_boundaries must be >= 1")
 
+    forced = set(forced_action_boundaries or set())
+    forced_requests: list[BoundaryAnalysisRequest] = []
     candidates: list[BoundaryAnalysisRequest] = []
     skipped: list[SkippedBoundary] = []
     transition_by_boundary = {transition.boundary_index: transition for transition in ctl.transitions}
@@ -141,26 +148,40 @@ def build_advanced_analysis_plan(
             ))
             continue
 
-        request = _request_for_boundary(ctl, boundary)
+        is_forced = boundary.boundary_index in forced
+        request = _request_for_boundary(
+            ctl,
+            boundary,
+            force_action_verification=is_forced,
+        )
         if request is None:
             skipped.append(SkippedBoundary(
                 boundary_index=boundary.boundary_index,
-                reason="Cheap VIR/CutSignature evidence is sufficient for the current decision; no expensive boundary analysis is justified.",
+                reason=(
+                    "Mandatory action-timing verification could not be scheduled because the revised boundary is no longer a feasible action-cut opportunity."
+                    if is_forced
+                    else "Cheap VIR/CutSignature evidence is sufficient for the current decision; no expensive boundary analysis is justified."
+                ),
             ))
+        elif is_forced:
+            forced_requests.append(request)
         else:
             candidates.append(request)
 
+    forced_requests.sort(key=lambda request: request.boundary_index)
     candidates.sort(key=lambda request: (-request.priority, request.boundary_index))
-    selected = candidates[:max_boundaries]
-    for request in candidates[max_boundaries:]:
+    remaining_budget = max(0, max_boundaries - len(forced_requests))
+    selected = forced_requests + candidates[:remaining_budget]
+    for request in candidates[remaining_budget:]:
         skipped.append(SkippedBoundary(
             boundary_index=request.boundary_index,
             reason=f"Eligible for {', '.join(request.requested_features)} but deferred by the max_boundaries={max_boundaries} compute budget.",
         ))
 
+    effective_budget = max(max_boundaries, len(forced_requests))
     return AdvancedAnalysisPlan(
         project_id=ctl.project_id,
-        max_boundaries=max_boundaries,
+        max_boundaries=effective_budget,
         requests=selected,
         skipped_boundaries=sorted(skipped, key=lambda item: item.boundary_index),
         notes=[
@@ -168,5 +189,6 @@ def build_advanced_analysis_plan(
             "Segmentation is supported by the contract but is not scheduled until cheap subject/occlusion evidence exists.",
             "Depth is currently requested only for feasible zoom-bridge opportunities.",
             "Dense flow is limited to ambiguous action/directional boundaries or depth-assisted zoom candidates.",
+            "Post-render action-timing revision boundaries are forced into dense-flow verification even when cheap phase evidence becomes near-certain; mandatory verification may consume the configured budget before optional boundaries.",
         ],
     )
