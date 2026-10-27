@@ -43,7 +43,7 @@ def _windows(ctl: CtlProgram, boundary: BoundaryTransitionOpportunity, radius: f
         source_start_seconds=max(0.0, right.source_in_seconds - right_before),
         source_end_seconds=min(right.source_out_seconds, right.source_in_seconds + radius),
     )
-    return left_window, right_window
+    return left_window, right_window, left, right
 
 
 def _request_for_boundary(
@@ -55,7 +55,7 @@ def _request_for_boundary(
         return None
 
     signature = boundary.cut_signature
-    left_window, right_window = _windows(ctl, boundary)
+    left_window, right_window, left_clip, right_clip = _windows(ctl, boundary)
     evidence: dict[str, float | str | bool] = {
         "recommendedMechanism": boundary.recommended_mechanism,
         "relationScore": signature.relation_score,
@@ -65,6 +65,8 @@ def _request_for_boundary(
         "globalMotionConfidence": signature.global_motion_confidence,
         "outgoingHandleSeconds": boundary.outgoing_handle_seconds,
         "incomingHandleSeconds": boundary.incoming_handle_seconds,
+        "leftSourceOutSeconds": left_clip.source_out_seconds,
+        "rightSourceInSeconds": right_clip.source_in_seconds,
     }
 
     # Depth is currently useful only where a scale relation already exists. It is
