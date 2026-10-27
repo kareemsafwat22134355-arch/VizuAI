@@ -5,6 +5,7 @@ from typing import Literal
 from pydantic import Field
 
 from .models import PortableModel
+from .segmentation_models import SegmentationWindowArtifact
 
 ADVANCED_RESULTS_SCHEMA_VERSION = "advanced-analysis-results-0.1"
 ExecutionStatus = Literal["completed", "backend_unavailable", "failed", "skipped"]
@@ -42,6 +43,8 @@ class BoundaryExecutionResult(PortableModel):
     left_flow: DenseFlowWindowSummary | None = None
     right_flow: DenseFlowWindowSummary | None = None
     flow_direction_compatibility: float | None = Field(default=None, ge=0, le=1)
+    left_segmentation: SegmentationWindowArtifact | None = None
+    right_segmentation: SegmentationWindowArtifact | None = None
     request_evidence: dict[str, float | str | bool] = Field(default_factory=dict)
     features: list[FeatureExecutionResult] = Field(default_factory=list)
 
