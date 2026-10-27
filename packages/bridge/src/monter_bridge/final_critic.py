@@ -46,6 +46,7 @@ def build_final_critic(
             source_artifact="critic-report.json",
             segment_id=finding.segment_id,
             boundary_index=finding.boundary_index,
+            suggested_shift_seconds=finding.suggested_shift_seconds,
         ))
 
     if render_analysis is not None:
