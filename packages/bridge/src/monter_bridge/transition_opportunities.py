@@ -42,6 +42,8 @@ class BoundaryTransitionOpportunity(PortableModel):
     occlusion_candidate_score: float = Field(default=0.0, ge=0, le=1)
     occlusion_side: OcclusionBoundarySide = "none"
     occlusion_edge: OcclusionEdge = "none"
+    outgoing_occlusion_seed: OcclusionCueSample | None = None
+    incoming_occlusion_seed: OcclusionCueSample | None = None
 
 
 class TransitionOpportunityReport(PortableModel):
@@ -87,7 +89,13 @@ def _boundary_occlusion_evidence(
     left_shot: ShotAnalysis,
     right_shot: ShotAnalysis,
     meaningful_threshold: float = 0.52,
-) -> tuple[float, OcclusionBoundarySide, OcclusionEdge]:
+) -> tuple[
+    float,
+    OcclusionBoundarySide,
+    OcclusionEdge,
+    OcclusionCueSample | None,
+    OcclusionCueSample | None,
+]:
     outgoing = _near_occlusion_sample(left_shot, left_segment.source_out_seconds)
     incoming = _near_occlusion_sample(right_shot, right_segment.source_in_seconds)
     outgoing_score = outgoing.score if outgoing is not None else 0.0
@@ -112,7 +120,7 @@ def _boundary_occlusion_evidence(
         side = "none"
         edge = "none"
 
-    return score, side, edge
+    return score, side, edge, outgoing, incoming
 
 
 def _hard_cut_candidate(signature: CutSignature) -> TransitionCandidate:
@@ -253,7 +261,13 @@ def synthesize_transition_opportunities(edit_plan: EditPlan, vir: VirProject) ->
 
         signature = build_cut_signature(left_segment, right_segment, left_shot, right_shot)
         outgoing_handle, incoming_handle = _available_handles(left_segment, right_segment, left_shot, right_shot)
-        occlusion_score, occlusion_side, occlusion_edge = _boundary_occlusion_evidence(
+        (
+            occlusion_score,
+            occlusion_side,
+            occlusion_edge,
+            outgoing_occlusion_seed,
+            incoming_occlusion_seed,
+        ) = _boundary_occlusion_evidence(
             left_segment,
             right_segment,
             left_shot,
@@ -278,6 +292,8 @@ def synthesize_transition_opportunities(edit_plan: EditPlan, vir: VirProject) ->
                 occlusion_candidate_score=occlusion_score,
                 occlusion_side=occlusion_side,
                 occlusion_edge=occlusion_edge,
+                outgoing_occlusion_seed=outgoing_occlusion_seed,
+                incoming_occlusion_seed=incoming_occlusion_seed,
             )
         )
 
@@ -288,7 +304,7 @@ def synthesize_transition_opportunities(edit_plan: EditPlan, vir: VirProject) ->
             "This report scores transition opportunities independently from CTL compilation; CTL v0.2 can promote supported feasible candidates such as directional_bridge.",
             "Hard cuts remain first-class valid decisions at every boundary.",
             "Non-zero bridge candidates require both physical motivation and verified source handles on each side of the cut.",
-            "Cheap camera-compensated occlusion likelihood is boundary evidence only; it does not create an occlusion transition or claim a segmentation mask exists.",
+            "Cheap camera-compensated occlusion likelihood is boundary evidence only; exact near-cut cue samples are preserved for later prompt derivation but do not claim a segmentation mask exists.",
             "Unsupported primitives or candidates adjacent to event-driven timewarps remain opportunities and fall back safely during CTL compilation.",
         ],
     )
