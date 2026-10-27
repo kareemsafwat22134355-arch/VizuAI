@@ -1,0 +1,12 @@
+{
+  "backendId": "sam2",
+  "device": "cpu",
+  "modelId": "sam2-local",
+  "checkpointPath": "./models/sam2/model.pt",
+  "modelConfigPath": "./models/sam2/model.yaml",
+  "allowNetwork": false,
+  "parameters": {
+    "offloadVideoToCpu": true,
+    "offloadStateToCpu": true
+  }
+}
