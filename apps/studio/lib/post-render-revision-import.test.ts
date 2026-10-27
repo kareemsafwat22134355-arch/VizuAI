@@ -27,13 +27,16 @@ function bundle(reportProjectId = "p") {
     attempted: true,
     changed: true,
     accepted: false,
-    reason: "candidate did not pass",
+    reason: "candidate did not pass verification",
     baselineFinalStatus: "needs_revision",
-    candidateFinalStatus: "needs_revision",
+    candidateFinalStatus: "pass",
     baselineAutomaticCandidates: 1,
-    candidateAutomaticCandidates: 1,
+    candidateAutomaticCandidates: 0,
     changedSegments: ["s1"],
     changedBoundaries: [2],
+    verificationStatus: "failed",
+    verifiedBoundaries: [],
+    failedVerificationBoundaries: [2],
     candidateDir: "post-render-candidate-01",
     baselineSnapshotDir: null,
     promotedArtifacts: [],
@@ -47,12 +50,15 @@ function bundle(reportProjectId = "p") {
 }
 
 describe("post-render revision bundle import", () => {
-  it("keeps acceptance/rejection and changed-boundary evidence without candidate media", async () => {
+  it("keeps acceptance/rejection and verification evidence without candidate media", async () => {
     const result = await importMonterBundle(bundle());
     expect(result.postRenderRevision?.attempted).toBe(true);
     expect(result.postRenderRevision?.accepted).toBe(false);
     expect(result.postRenderRevision?.changedSegments).toEqual(["s1"]);
     expect(result.postRenderRevision?.changedBoundaries).toEqual([2]);
+    expect(result.postRenderRevision?.verificationStatus).toBe("failed");
+    expect(result.postRenderRevision?.verifiedBoundaries).toEqual([]);
+    expect(result.postRenderRevision?.failedVerificationBoundaries).toEqual([2]);
     expect(result.ignoredEntries).not.toContain("post-render-revision-report.json");
   });
 
