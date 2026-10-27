@@ -16,14 +16,14 @@ FFMPEG_AVAILABLE = shutil.which("ffmpeg") is not None
 
 
 class LeftHalfBackend:
-    descriptor = SegmentationBackendDescriptor(
-        backend_id="test-threshold",
-        backend_version="1.0",
-        model_id="left-half-v1",
-    )
-
-    def __init__(self):
+    def __init__(self, threshold: float = .5):
         self.calls = 0
+        self.descriptor = SegmentationBackendDescriptor(
+            backend_id="test-threshold",
+            backend_version="1.0",
+            model_id="left-half-v1",
+            parameters={"threshold": threshold},
+        )
 
     def segment(self, frame_bgr: np.ndarray, *, time_seconds: float) -> np.ndarray:
         self.calls += 1
@@ -79,10 +79,13 @@ def test_segmentation_backend_writes_masks_then_hits_cache_without_reexecution(t
     )
 
     assert first.cache_hit is False
+    assert first.input_digest
+    assert len(first.input_digest) == 32
     assert len(first.frames) >= 3
     first_call_count = backend.calls
     assert first_call_count == len(first.frames)
     assert first.backend.backend_id == "test-threshold"
+    assert first.backend.parameters["threshold"] == .5
     assert first.analysis_width == 160
     for frame in first.frames:
         assert frame.width == 160
@@ -103,21 +106,26 @@ def test_segmentation_backend_writes_masks_then_hits_cache_without_reexecution(t
 
     assert second.cache_hit is True
     assert second.cache_key == first.cache_key
+    assert second.input_digest == first.input_digest
     assert backend.calls == first_call_count
     assert [frame.mask_path for frame in second.frames] == [frame.mask_path for frame in first.frames]
 
 
 @pytest.mark.skipif(not FFMPEG_AVAILABLE, reason="FFmpeg required for encoded segmentation cache test")
-def test_segmentation_cache_key_changes_with_sampling_parameters(tmp_path: Path):
+def test_segmentation_cache_key_changes_with_sampling_or_backend_parameters(tmp_path: Path):
     video = tmp_path / "proxy.mp4"
     cache = tmp_path / "segmentation-cache"
     _make_video(video)
-    backend = LeftHalfBackend()
 
-    narrow = execute_segmentation_window(video, _window(), "left", cache, backend, sample_fps=4, analysis_width=160)
-    wide = execute_segmentation_window(video, _window(), "left", cache, backend, sample_fps=4, analysis_width=240)
+    base_backend = LeftHalfBackend(threshold=.5)
+    changed_backend = LeftHalfBackend(threshold=.7)
+    narrow = execute_segmentation_window(video, _window(), "left", cache, base_backend, sample_fps=4, analysis_width=160)
+    wide = execute_segmentation_window(video, _window(), "left", cache, base_backend, sample_fps=4, analysis_width=240)
+    changed_params = execute_segmentation_window(video, _window(), "left", cache, changed_backend, sample_fps=4, analysis_width=160)
 
     assert narrow.cache_key != wide.cache_key
+    assert narrow.cache_key != changed_params.cache_key
+    assert narrow.input_digest == wide.input_digest == changed_params.input_digest
     assert narrow.frames[0].width == 160
     assert wide.frames[0].width == 240
 
