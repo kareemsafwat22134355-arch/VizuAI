@@ -1,6 +1,6 @@
 import pytest
 
-from monter_bridge.analysis_models import GlobalMotionSummary, ShotAnalysis, TimeRange, VirProject
+from monter_bridge.analysis_models import EditAnchor, GlobalMotionSummary, ShotAnalysis, TimeRange, VirProject
 from monter_bridge.critic import critique_edit
 from monter_bridge.critic_models import CriticFinding, CriticReport
 from monter_bridge.ctl_models import CtlClip, CtlProgram, CtlTransition, TimeWarpIntent, TimeWarpSlice
@@ -15,7 +15,14 @@ def fixture_edit_and_vir(*, left_source_out=1.8):
     left_shot = ShotAnalysis(
         id="left_shot", asset_id="left_asset",
         range=TimeRange(start_seconds=0, end_seconds=4),
-        mean_motion=1, peak_motion=2, motion_samples=[], edit_anchors=[], global_motion=motion,
+        mean_motion=1, peak_motion=2, motion_samples=[],
+        edit_anchors=[EditAnchor(
+            type="motion_peak",
+            time_seconds=max(.01, left_source_out - .05),
+            confidence=.92,
+            reason="cheap action evidence remains near the rolled boundary",
+        )],
+        global_motion=motion,
     )
     right_shot = ShotAnalysis(
         id="right_shot", asset_id="right_asset",
