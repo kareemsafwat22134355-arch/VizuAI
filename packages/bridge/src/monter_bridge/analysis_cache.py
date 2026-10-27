@@ -7,7 +7,7 @@ from .analysis_models import ShotAnalysis
 from .models import MediaAsset
 
 ANALYSIS_CACHE_VERSION = 1
-ANALYSIS_ALGORITHM_VERSION = "motion-global-v2"
+ANALYSIS_ALGORITHM_VERSION = "motion-global-occlusion-v3"
 DEFAULT_SAMPLE_FPS = 4.0
 DEFAULT_ANALYSIS_WIDTH = 320
 DEFAULT_ADAPTIVE_THRESHOLD = 3.0
