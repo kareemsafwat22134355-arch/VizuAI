@@ -16,6 +16,7 @@ from .advanced_execution_models import (
 from .models import MonterProject
 from .motion import analysis_gray
 from .proxy import proxy_path_for
+from .segmentation import SegmentationBackend, execute_segmentation_window
 
 
 def _dense_flow_window(
@@ -129,18 +130,32 @@ def _direction_compatibility(left: DenseFlowWindowSummary, right: DenseFlowWindo
     return max(0.0, min(1.0, (cosine + 1.0) / 2.0))
 
 
+def _mean_foreground_fraction(frames) -> float:
+    if not frames:
+        return 0.0
+    return float(np.mean([frame.foreground_fraction for frame in frames]))
+
+
 def execute_advanced_analysis(
     project: MonterProject,
     plan: AdvancedAnalysisPlan,
     proxy_dir: Path,
     sample_fps: float = 12.0,
     analysis_width: int = 320,
+    segmentation_backend: SegmentationBackend | None = None,
+    segmentation_cache_dir: Path | None = None,
+    segmentation_sample_fps: float = 6.0,
+    segmentation_analysis_width: int | None = None,
 ) -> AdvancedAnalysisResults:
     if project.project_id != plan.project_id:
         raise ValueError("Project manifest projectId does not match advanced analysis plan")
+    if segmentation_backend is not None and segmentation_sample_fps <= 0:
+        raise ValueError("segmentation_sample_fps must be > 0")
 
     assets = {asset.id: asset for asset in project.assets}
     results: list[BoundaryExecutionResult] = []
+    segmentation_width = segmentation_analysis_width or analysis_width
+    segmentation_cache = segmentation_cache_dir or (proxy_dir.parent / "segmentation-cache")
 
     for request in plan.requests:
         boundary = BoundaryExecutionResult(
@@ -205,8 +220,76 @@ def execute_advanced_analysis(
                     reason=str(exc),
                 ))
 
+        if "segmentation" in request.requested_features:
+            if segmentation_backend is None:
+                feature_results.append(FeatureExecutionResult(
+                    feature="segmentation",
+                    status="backend_unavailable",
+                    backend="unconfigured",
+                    reason="Segmentation was requested by the scheduler, but no heavyweight backend is installed or configured automatically.",
+                ))
+            else:
+                try:
+                    left_asset = assets[request.left_window.asset_id]
+                    right_asset = assets[request.right_window.asset_id]
+                    left_proxy = proxy_path_for(left_asset, proxy_dir)
+                    right_proxy = proxy_path_for(right_asset, proxy_dir)
+                    if not left_proxy.is_file() or not right_proxy.is_file():
+                        missing = [str(path) for path in (left_proxy, right_proxy) if not path.is_file()]
+                        raise FileNotFoundError(f"Missing proxy file(s): {', '.join(missing)}")
+
+                    left_segmentation = execute_segmentation_window(
+                        left_proxy,
+                        request.left_window,
+                        "left",
+                        segmentation_cache,
+                        segmentation_backend,
+                        sample_fps=segmentation_sample_fps,
+                        analysis_width=segmentation_width,
+                    )
+                    right_segmentation = execute_segmentation_window(
+                        right_proxy,
+                        request.right_window,
+                        "right",
+                        segmentation_cache,
+                        segmentation_backend,
+                        sample_fps=segmentation_sample_fps,
+                        analysis_width=segmentation_width,
+                    )
+                    boundary.left_segmentation = left_segmentation
+                    boundary.right_segmentation = right_segmentation
+                    completed = bool(left_segmentation.frames) and bool(right_segmentation.frames)
+                    feature_results.append(FeatureExecutionResult(
+                        feature="segmentation",
+                        status="completed" if completed else "failed",
+                        backend=left_segmentation.backend.backend_id,
+                        reason=(
+                            "Configured segmentation backend executed only inside scheduler-selected boundary windows; mask PNGs were stored in the deterministic cache."
+                            if completed
+                            else "Configured segmentation backend did not produce at least one sampled mask on both boundary windows."
+                        ),
+                        metrics={
+                            "modelId": left_segmentation.backend.model_id,
+                            "leftSampleCount": len(left_segmentation.frames),
+                            "rightSampleCount": len(right_segmentation.frames),
+                            "leftMeanForegroundFraction": _mean_foreground_fraction(left_segmentation.frames),
+                            "rightMeanForegroundFraction": _mean_foreground_fraction(right_segmentation.frames),
+                            "leftCacheHit": left_segmentation.cache_hit,
+                            "rightCacheHit": right_segmentation.cache_hit,
+                            "leftCacheKey": left_segmentation.cache_key,
+                            "rightCacheKey": right_segmentation.cache_key,
+                        },
+                    ))
+                except Exception as exc:
+                    feature_results.append(FeatureExecutionResult(
+                        feature="segmentation",
+                        status="failed",
+                        backend=getattr(getattr(segmentation_backend, "descriptor", None), "backend_id", "configured"),
+                        reason=str(exc),
+                    ))
+
         for feature in request.requested_features:
-            if feature == "dense_flow":
+            if feature in {"dense_flow", "segmentation"}:
                 continue
             feature_results.append(FeatureExecutionResult(
                 feature=feature,
@@ -223,8 +306,9 @@ def execute_advanced_analysis(
         boundaries=results,
         notes=[
             "Dense flow uses OpenCV Farneback only on scheduler-selected windows; it is a deterministic CPU baseline, not RAFT.",
-            "Dense-flow summaries now preserve temporal peak/onset evidence so action-cut timing can be refined instead of using direction averages only.",
-            "Depth and segmentation requests remain explicit backend_unavailable results until real optional backends are configured.",
-            "No heavyweight model is downloaded automatically by this executor.",
+            "Dense-flow summaries preserve temporal peak/onset evidence so action-cut timing can be refined instead of using direction averages only.",
+            "Segmentation executes only when an explicit backend object is supplied; otherwise requests remain backend_unavailable and no model is downloaded.",
+            "Configured segmentation masks are sampled inside scheduler-selected windows and cached as PNG artifacts keyed by media state, window, backend/model version, and sampling parameters.",
+            "Depth requests remain backend_unavailable until a real optional backend is configured.",
         ],
     )
