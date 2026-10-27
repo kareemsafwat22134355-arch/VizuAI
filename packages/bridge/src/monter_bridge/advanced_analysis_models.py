@@ -5,8 +5,9 @@ from typing import Literal
 from pydantic import Field, model_validator
 
 from .models import PortableModel
+from .segmentation_prompt_models import SegmentationPromptContext
 
-ADVANCED_ANALYSIS_SCHEMA_VERSION = "advanced-analysis-plan-0.1"
+ADVANCED_ANALYSIS_SCHEMA_VERSION = "advanced-analysis-plan-0.2"
 AdvancedFeature = Literal["dense_flow", "depth", "segmentation"]
 
 
@@ -30,6 +31,8 @@ class BoundaryAnalysisRequest(PortableModel):
     requested_features: list[AdvancedFeature] = Field(min_length=1)
     left_window: SourceAnalysisWindow
     right_window: SourceAnalysisWindow
+    left_segmentation_prompt: SegmentationPromptContext | None = None
+    right_segmentation_prompt: SegmentationPromptContext | None = None
     reason: str
     evidence: dict[str, float | str | bool] = Field(default_factory=dict)
 

@@ -16,7 +16,11 @@ from .advanced_execution_models import (
 from .models import MonterProject
 from .motion import analysis_gray
 from .proxy import proxy_path_for
-from .segmentation import SegmentationBackend, execute_segmentation_window
+from .segmentation import (
+    SegmentationBackend,
+    SegmentationWindowBackend,
+    execute_segmentation_window,
+)
 
 
 def _dense_flow_window(
@@ -142,7 +146,7 @@ def execute_advanced_analysis(
     proxy_dir: Path,
     sample_fps: float = 12.0,
     analysis_width: int = 320,
-    segmentation_backend: SegmentationBackend | None = None,
+    segmentation_backend: SegmentationBackend | SegmentationWindowBackend | None = None,
     segmentation_cache_dir: Path | None = None,
     segmentation_sample_fps: float = 6.0,
     segmentation_analysis_width: int | None = None,
@@ -230,54 +234,98 @@ def execute_advanced_analysis(
                 ))
             else:
                 try:
-                    left_asset = assets[request.left_window.asset_id]
-                    right_asset = assets[request.right_window.asset_id]
-                    left_proxy = proxy_path_for(left_asset, proxy_dir)
-                    right_proxy = proxy_path_for(right_asset, proxy_dir)
-                    if not left_proxy.is_file() or not right_proxy.is_file():
-                        missing = [str(path) for path in (left_proxy, right_proxy) if not path.is_file()]
-                        raise FileNotFoundError(f"Missing proxy file(s): {', '.join(missing)}")
+                    has_prompt_context = (
+                        request.left_segmentation_prompt is not None
+                        or request.right_segmentation_prompt is not None
+                    )
+                    run_left = (
+                        request.left_segmentation_prompt is not None
+                        if has_prompt_context
+                        else True
+                    )
+                    run_right = (
+                        request.right_segmentation_prompt is not None
+                        if has_prompt_context
+                        else True
+                    )
+                    left_segmentation = None
+                    right_segmentation = None
 
-                    left_segmentation = execute_segmentation_window(
-                        left_proxy,
-                        request.left_window,
-                        "left",
-                        segmentation_cache,
-                        segmentation_backend,
-                        sample_fps=segmentation_sample_fps,
-                        analysis_width=segmentation_width,
+                    if run_left:
+                        left_asset = assets[request.left_window.asset_id]
+                        left_proxy = proxy_path_for(left_asset, proxy_dir)
+                        if not left_proxy.is_file():
+                            raise FileNotFoundError(f"Missing proxy file: {left_proxy}")
+                        left_segmentation = execute_segmentation_window(
+                            left_proxy,
+                            request.left_window,
+                            "left",
+                            segmentation_cache,
+                            segmentation_backend,
+                            prompt=request.left_segmentation_prompt,
+                            sample_fps=segmentation_sample_fps,
+                            analysis_width=segmentation_width,
+                        )
+                        boundary.left_segmentation = left_segmentation
+
+                    if run_right:
+                        right_asset = assets[request.right_window.asset_id]
+                        right_proxy = proxy_path_for(right_asset, proxy_dir)
+                        if not right_proxy.is_file():
+                            raise FileNotFoundError(f"Missing proxy file: {right_proxy}")
+                        right_segmentation = execute_segmentation_window(
+                            right_proxy,
+                            request.right_window,
+                            "right",
+                            segmentation_cache,
+                            segmentation_backend,
+                            prompt=request.right_segmentation_prompt,
+                            sample_fps=segmentation_sample_fps,
+                            analysis_width=segmentation_width,
+                        )
+                        boundary.right_segmentation = right_segmentation
+
+                    left_completed = not run_left or bool(left_segmentation and left_segmentation.frames)
+                    right_completed = not run_right or bool(right_segmentation and right_segmentation.frames)
+                    completed = (run_left or run_right) and left_completed and right_completed
+                    executed_sides = ",".join(
+                        side for side, enabled in (("left", run_left), ("right", run_right)) if enabled
                     )
-                    right_segmentation = execute_segmentation_window(
-                        right_proxy,
-                        request.right_window,
-                        "right",
-                        segmentation_cache,
-                        segmentation_backend,
-                        sample_fps=segmentation_sample_fps,
-                        analysis_width=segmentation_width,
+                    representative = left_segmentation or right_segmentation
+                    backend_id = (
+                        representative.backend.backend_id
+                        if representative is not None
+                        else getattr(getattr(segmentation_backend, "descriptor", None), "backend_id", "configured")
                     )
-                    boundary.left_segmentation = left_segmentation
-                    boundary.right_segmentation = right_segmentation
-                    completed = bool(left_segmentation.frames) and bool(right_segmentation.frames)
+                    model_id = representative.backend.model_id if representative is not None else "unknown"
                     feature_results.append(FeatureExecutionResult(
                         feature="segmentation",
                         status="completed" if completed else "failed",
-                        backend=left_segmentation.backend.backend_id,
+                        backend=backend_id,
                         reason=(
-                            "Configured segmentation backend executed only inside scheduler-selected boundary windows; mask PNGs were stored in the deterministic cache."
-                            if completed
-                            else "Configured segmentation backend did not produce at least one sampled mask on both boundary windows."
+                            "Configured segmentation backend executed only on the prompt-motivated scheduler window side(s); mask PNGs were stored in the deterministic prompt-aware cache."
+                            if completed and has_prompt_context
+                            else (
+                                "Configured legacy frame segmentation backend executed on both scheduler-selected boundary windows because the request predates typed prompt contexts."
+                                if completed
+                                else "Configured segmentation backend did not produce at least one sampled mask on every requested boundary side."
+                            )
                         ),
                         metrics={
-                            "modelId": left_segmentation.backend.model_id,
-                            "leftSampleCount": len(left_segmentation.frames),
-                            "rightSampleCount": len(right_segmentation.frames),
-                            "leftMeanForegroundFraction": _mean_foreground_fraction(left_segmentation.frames),
-                            "rightMeanForegroundFraction": _mean_foreground_fraction(right_segmentation.frames),
-                            "leftCacheHit": left_segmentation.cache_hit,
-                            "rightCacheHit": right_segmentation.cache_hit,
-                            "leftCacheKey": left_segmentation.cache_key,
-                            "rightCacheKey": right_segmentation.cache_key,
+                            "modelId": model_id,
+                            "executedSides": executed_sides,
+                            "leftExecuted": run_left,
+                            "rightExecuted": run_right,
+                            "leftPrompted": request.left_segmentation_prompt is not None,
+                            "rightPrompted": request.right_segmentation_prompt is not None,
+                            "leftSampleCount": len(left_segmentation.frames) if left_segmentation else 0,
+                            "rightSampleCount": len(right_segmentation.frames) if right_segmentation else 0,
+                            "leftMeanForegroundFraction": _mean_foreground_fraction(left_segmentation.frames) if left_segmentation else 0.0,
+                            "rightMeanForegroundFraction": _mean_foreground_fraction(right_segmentation.frames) if right_segmentation else 0.0,
+                            "leftCacheHit": left_segmentation.cache_hit if left_segmentation else False,
+                            "rightCacheHit": right_segmentation.cache_hit if right_segmentation else False,
+                            "leftCacheKey": left_segmentation.cache_key if left_segmentation else "",
+                            "rightCacheKey": right_segmentation.cache_key if right_segmentation else "",
                         },
                     ))
                 except Exception as exc:
@@ -308,7 +356,8 @@ def execute_advanced_analysis(
             "Dense flow uses OpenCV Farneback only on scheduler-selected windows; it is a deterministic CPU baseline, not RAFT.",
             "Dense-flow summaries preserve temporal peak/onset evidence so action-cut timing can be refined instead of using direction averages only.",
             "Segmentation executes only when an explicit backend object is supplied; otherwise requests remain backend_unavailable and no model is downloaded.",
-            "Configured segmentation masks are sampled inside scheduler-selected windows and cached as PNG artifacts keyed by media state, window, backend/model version, and sampling parameters.",
+            "Prompt-aware segmentation executes only on motivated boundary sides; legacy prompt-less requests retain both-side frame-backend behavior for backward compatibility.",
+            "Segmentation mask caches include execution mode and prompt context in their identity so different prompts cannot reuse stale masks.",
             "Depth requests remain backend_unavailable until a real optional backend is configured.",
         ],
     )

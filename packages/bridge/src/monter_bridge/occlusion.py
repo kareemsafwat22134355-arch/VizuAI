@@ -44,6 +44,39 @@ def _dominant_edge(mask: np.ndarray, band_ratio: float = 0.14) -> tuple[Occlusio
     return best_edge, edge_contact  # type: ignore[return-value]
 
 
+def _largest_component_geometry(
+    mask: np.ndarray,
+) -> tuple[float, list[float] | None, list[float] | None]:
+    if not np.count_nonzero(mask):
+        return 0.0, None, None
+
+    count, _, stats, centroids = cv2.connectedComponentsWithStats(mask, connectivity=8)
+    if count <= 1:
+        return 0.0, None, None
+
+    component_index = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+    frame_height, frame_width = mask.shape
+    frame_area = float(frame_height * frame_width)
+    area = float(stats[component_index, cv2.CC_STAT_AREA])
+    x = float(stats[component_index, cv2.CC_STAT_LEFT])
+    y = float(stats[component_index, cv2.CC_STAT_TOP])
+    width = float(stats[component_index, cv2.CC_STAT_WIDTH])
+    height = float(stats[component_index, cv2.CC_STAT_HEIGHT])
+    centroid_x, centroid_y = centroids[component_index]
+
+    bbox = [
+        max(0.0, min(1.0, x / frame_width)),
+        max(0.0, min(1.0, y / frame_height)),
+        max(0.0, min(1.0, width / frame_width)),
+        max(0.0, min(1.0, height / frame_height)),
+    ]
+    centroid = [
+        max(0.0, min(1.0, float(centroid_x) / frame_width)),
+        max(0.0, min(1.0, float(centroid_y) / frame_height)),
+    ]
+    return max(0.0, min(1.0, area / frame_area)), bbox, centroid
+
+
 def measure_occlusion_cue(
     previous_gray: np.ndarray,
     current_gray: np.ndarray,
@@ -78,14 +111,7 @@ def measure_occlusion_cue(
     frame_area = float(mask.size)
     changed_pixels = float(np.count_nonzero(mask))
     residual_fraction = max(0.0, min(1.0, changed_pixels / max(frame_area, 1.0)))
-
-    largest_component_fraction = 0.0
-    if changed_pixels > 0:
-        count, _, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
-        if count > 1:
-            largest_area = float(np.max(stats[1:, cv2.CC_STAT_AREA]))
-            largest_component_fraction = max(0.0, min(1.0, largest_area / frame_area))
-
+    largest_component_fraction, component_bbox, component_centroid = _largest_component_geometry(mask)
     dominant_edge, edge_contact_fraction = _dominant_edge(mask)
 
     residual_signal = max(0.0, min(1.0, (residual_fraction - 0.025) / 0.30))
@@ -107,6 +133,8 @@ def measure_occlusion_cue(
         score=max(0.0, min(1.0, float(score))),
         residual_change_fraction=residual_fraction,
         largest_component_fraction=largest_component_fraction,
+        largest_component_bbox_xywh_norm=component_bbox,
+        largest_component_centroid_xy_norm=component_centroid,
         edge_contact_fraction=edge_contact_fraction,
         dominant_edge=dominant_edge,
         compensation_confidence=compensation_confidence,

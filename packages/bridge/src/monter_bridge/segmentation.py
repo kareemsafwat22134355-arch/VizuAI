@@ -13,10 +13,12 @@ import numpy as np
 from .advanced_analysis_models import SourceAnalysisWindow
 from .segmentation_models import (
     SegmentationBackendDescriptor,
+    SegmentationExecutionMode,
     SegmentationFrameArtifact,
     SegmentationSide,
     SegmentationWindowArtifact,
 )
+from .segmentation_prompt_models import SegmentationPromptContext
 
 
 class SegmentationBackend(Protocol):
@@ -24,6 +26,20 @@ class SegmentationBackend(Protocol):
 
     def segment(self, frame_bgr: np.ndarray, *, time_seconds: float) -> np.ndarray:
         """Return one 2D foreground mask aligned to frame_bgr."""
+        ...
+
+
+class SegmentationWindowBackend(Protocol):
+    descriptor: SegmentationBackendDescriptor
+
+    def segment_window(
+        self,
+        frames_bgr: list[np.ndarray],
+        *,
+        times_seconds: list[float],
+        prompt: SegmentationPromptContext,
+    ) -> list[np.ndarray]:
+        """Track one prompted foreground object across the scheduler-selected window."""
         ...
 
 
@@ -51,6 +67,8 @@ def _cache_key(
     window: SourceAnalysisWindow,
     side: SegmentationSide,
     backend: SegmentationBackendDescriptor,
+    execution_mode: SegmentationExecutionMode,
+    prompt: SegmentationPromptContext | None,
     sample_fps: float,
     analysis_width: int,
 ) -> str:
@@ -67,6 +85,10 @@ def _cache_key(
         "sampleFps": round(sample_fps, 6),
         "analysisWidth": analysis_width,
         "backend": backend.model_dump(by_alias=True, mode="json"),
+        "executionMode": execution_mode,
+        "promptContext": (
+            prompt.model_dump(by_alias=True, mode="json") if prompt is not None else None
+        ),
     }
     raw = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return "seg_" + hashlib.blake2s(raw, digest_size=12).hexdigest()
@@ -153,6 +175,8 @@ def _load_cached(
     cache_key: str,
     descriptor: SegmentationBackendDescriptor,
     input_digest: str,
+    execution_mode: SegmentationExecutionMode,
+    prompt: SegmentationPromptContext | None,
 ) -> SegmentationWindowArtifact | None:
     manifest = cache_root / cache_key / "manifest.json"
     if not manifest.is_file():
@@ -165,6 +189,8 @@ def _load_cached(
         artifact.cache_key != cache_key
         or artifact.backend != descriptor
         or artifact.input_digest != input_digest
+        or artifact.execution_mode != execution_mode
+        or artifact.prompt_context != prompt
     ):
         return None
 
@@ -180,26 +206,84 @@ def _load_cached(
     return artifact.model_copy(update={"cache_hit": True})
 
 
+def _raw_window_masks(
+    backend: SegmentationBackend | SegmentationWindowBackend,
+    sampled: list[tuple[float, np.ndarray]],
+    execution_mode: SegmentationExecutionMode,
+    prompt: SegmentationPromptContext | None,
+) -> list[np.ndarray]:
+    if execution_mode == "window":
+        if prompt is None:
+            raise ValueError("window segmentation backend requires a typed prompt context")
+        method = getattr(backend, "segment_window")
+        raw_masks = list(method(
+            [frame for _, frame in sampled],
+            times_seconds=[time_seconds for time_seconds, _ in sampled],
+            prompt=prompt,
+        ))
+        if len(raw_masks) != len(sampled):
+            raise ValueError(
+                "window segmentation backend must return exactly one mask per sampled frame"
+            )
+        return raw_masks
+
+    method = getattr(backend, "segment", None)
+    if not callable(method):
+        raise ValueError("frame segmentation backend does not implement segment()")
+    return [
+        method(frame, time_seconds=time_seconds)
+        for time_seconds, frame in sampled
+    ]
+
+
 def execute_segmentation_window(
     video_path: Path,
     window: SourceAnalysisWindow,
     side: SegmentationSide,
     cache_root: Path,
-    backend: SegmentationBackend,
+    backend: SegmentationBackend | SegmentationWindowBackend,
     *,
+    prompt: SegmentationPromptContext | None = None,
     sample_fps: float = 6.0,
     analysis_width: int = 320,
 ) -> SegmentationWindowArtifact:
     descriptor = SegmentationBackendDescriptor.model_validate(backend.descriptor)
+    if prompt is not None and prompt.side != side:
+        raise ValueError(
+            f"segmentation prompt side {prompt.side} does not match requested window side {side}"
+        )
+    window_method = getattr(backend, "segment_window", None)
+    execution_mode: SegmentationExecutionMode = "window" if callable(window_method) else "frame"
+    if execution_mode == "window" and prompt is None:
+        raise ValueError("window segmentation backend requires a typed prompt context")
+
     input_digest = _proxy_content_digest(video_path)
-    key = _cache_key(video_path, input_digest, window, side, descriptor, sample_fps, analysis_width)
+    key = _cache_key(
+        video_path,
+        input_digest,
+        window,
+        side,
+        descriptor,
+        execution_mode,
+        prompt,
+        sample_fps,
+        analysis_width,
+    )
     cache_root.mkdir(parents=True, exist_ok=True)
 
-    cached = _load_cached(cache_root, key, descriptor, input_digest)
+    cached = _load_cached(
+        cache_root,
+        key,
+        descriptor,
+        input_digest,
+        execution_mode,
+        prompt,
+    )
     if cached is not None:
         return cached
 
     sampled = _sample_window_frames(video_path, window, sample_fps, analysis_width)
+    raw_masks = _raw_window_masks(backend, sampled, execution_mode, prompt)
     final_dir = cache_root / key
     temporary_dir = cache_root / f".{key}.tmp"
     if temporary_dir.exists():
@@ -208,8 +292,7 @@ def execute_segmentation_window(
 
     frames: list[SegmentationFrameArtifact] = []
     try:
-        for index, (time_seconds, frame) in enumerate(sampled):
-            raw_mask = backend.segment(frame, time_seconds=time_seconds)
+        for index, ((time_seconds, frame), raw_mask) in enumerate(zip(sampled, raw_masks)):
             mask = _normalize_mask(raw_mask, frame.shape[:2])
             filename = f"mask-{index:04d}.png"
             output = temporary_dir / filename
@@ -235,6 +318,8 @@ def execute_segmentation_window(
             sample_fps=sample_fps,
             analysis_width=analysis_width,
             backend=descriptor,
+            execution_mode=execution_mode,
+            prompt_context=prompt,
             input_digest=input_digest,
             cache_key=key,
             cache_hit=False,

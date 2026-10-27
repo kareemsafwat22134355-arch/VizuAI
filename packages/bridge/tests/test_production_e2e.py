@@ -103,7 +103,7 @@ def test_produce_real_media_end_to_end(tmp_path: Path):
     )
 
     advanced = json.loads((work / "advanced-analysis-plan.json").read_text(encoding="utf-8"))
-    assert advanced["schemaVersion"] == "advanced-analysis-plan-0.1"
+    assert advanced["schemaVersion"] == "advanced-analysis-plan-0.2"
     assert advanced["projectId"] == report.project_id
     assert advanced["maxBoundaries"] == 4
     valid_features = {"dense_flow", "depth", "segmentation"}
