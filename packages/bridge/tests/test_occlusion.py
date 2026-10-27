@@ -1,3 +1,4 @@
+import cv2
 import numpy as np
 
 from monter_bridge.occlusion import measure_occlusion_cue, summarize_occlusion
@@ -20,6 +21,28 @@ def test_static_pair_has_negligible_occlusion_likelihood():
     assert sample.score < 0.05
     assert sample.residual_change_fraction < 0.01
     assert sample.dominant_edge == "none"
+
+
+def test_compensated_camera_translation_is_not_misread_as_foreground_occlusion():
+    previous = checkerboard()
+    matrix = np.array([[1.0, 0.0, 7.0], [0.0, 1.0, 0.0]], dtype=np.float32)
+    current = cv2.warpAffine(
+        previous,
+        matrix,
+        (previous.shape[1], previous.shape[0]),
+        flags=cv2.INTER_LINEAR,
+        borderMode=cv2.BORDER_REPLICATE,
+    )
+
+    sample = measure_occlusion_cue(
+        previous,
+        current,
+        time_seconds=1.1,
+        global_estimate=(7.0, 0.0, 0.0, 1.0, 1.0),
+    )
+
+    assert sample.score < 0.05
+    assert sample.residual_change_fraction < 0.01
 
 
 def test_large_foreground_sweep_touching_edge_scores_as_occlusion_candidate():
