@@ -122,6 +122,7 @@ def revise_edit_plan(edit: EditPlan, vir: VirProject, report: CriticReport) -> t
             ),
             boundary_index=boundary_index,
             boundary_shift_seconds=proposal.boundary_shift_seconds,
+            verification_kind="advanced_action_timing",
         ))
 
     segment_by_id = {segment.id: segment for segment in revised.segments}
