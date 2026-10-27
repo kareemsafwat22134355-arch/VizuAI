@@ -9,6 +9,8 @@ from .advanced_analysis_models import (
 from .ctl_models import CtlProgram
 from .transition_opportunities import BoundaryTransitionOpportunity, TransitionOpportunityReport
 
+OCCLUSION_SEGMENTATION_THRESHOLD = 0.58
+
 
 def _candidate(boundary: BoundaryTransitionOpportunity):
     return next(
@@ -44,6 +46,36 @@ def _windows(ctl: CtlProgram, boundary: BoundaryTransitionOpportunity, radius: f
     return left_window, right_window, left, right
 
 
+def _segmentation_motivated(boundary: BoundaryTransitionOpportunity) -> bool:
+    return (
+        boundary.occlusion_side != "none"
+        and boundary.occlusion_candidate_score >= OCCLUSION_SEGMENTATION_THRESHOLD
+    )
+
+
+def _features_with_segmentation(
+    base: list[str],
+    boundary: BoundaryTransitionOpportunity,
+) -> list[str]:
+    features = list(base)
+    if _segmentation_motivated(boundary) and "segmentation" not in features:
+        features.append("segmentation")
+    return features
+
+
+def _reason_with_segmentation(
+    reason: str,
+    boundary: BoundaryTransitionOpportunity,
+) -> str:
+    if not _segmentation_motivated(boundary):
+        return reason
+    return (
+        f"{reason} Cheap camera-compensated occlusion evidence scores "
+        f"{boundary.occlusion_candidate_score:.2f} on the {boundary.occlusion_side} side "
+        f"({boundary.occlusion_edge} edge), so segmentation is selectively requested to verify a real foreground mask."
+    )
+
+
 def _request_for_boundary(
     ctl: CtlProgram,
     boundary: BoundaryTransitionOpportunity,
@@ -67,6 +99,9 @@ def _request_for_boundary(
         "incomingHandleSeconds": boundary.incoming_handle_seconds,
         "leftSourceOutSeconds": left_clip.source_out_seconds,
         "rightSourceInSeconds": right_clip.source_in_seconds,
+        "occlusionCandidateScore": boundary.occlusion_candidate_score,
+        "occlusionSide": boundary.occlusion_side,
+        "occlusionEdge": boundary.occlusion_edge,
     }
 
     if boundary.recommended_mechanism == "zoom_bridge":
@@ -74,27 +109,32 @@ def _request_for_boundary(
         return BoundaryAnalysisRequest(
             boundary_index=boundary.boundary_index,
             priority=priority,
-            requested_features=["dense_flow", "depth"],
+            requested_features=_features_with_segmentation(["dense_flow", "depth"], boundary),
             left_window=left_window,
             right_window=right_window,
-            reason="A feasible zoom relation needs dense local motion plus selective depth before a 2.5D/scale bridge can be compiled safely.",
+            reason=_reason_with_segmentation(
+                "A feasible zoom relation needs dense local motion plus selective depth before a 2.5D/scale bridge can be compiled safely.",
+                boundary,
+            ),
             evidence=evidence,
         )
 
     if boundary.recommended_mechanism == "directional_bridge":
         borderline = signature.relation_score < 0.75 or signature.global_motion_confidence < 0.65
-        if not borderline:
-            return None
-        priority = min(1.0, 0.50 * candidate.motivation_score + 0.30 * candidate.feasibility_score + 0.20 * (1.0 - signature.global_motion_confidence))
-        return BoundaryAnalysisRequest(
-            boundary_index=boundary.boundary_index,
-            priority=priority,
-            requested_features=["dense_flow"],
-            left_window=left_window,
-            right_window=right_window,
-            reason="The directional bridge is feasible but global-motion evidence is borderline; dense flow is budgeted only around this boundary for validation.",
-            evidence=evidence,
-        )
+        if borderline:
+            priority = min(1.0, 0.50 * candidate.motivation_score + 0.30 * candidate.feasibility_score + 0.20 * (1.0 - signature.global_motion_confidence))
+            return BoundaryAnalysisRequest(
+                boundary_index=boundary.boundary_index,
+                priority=priority,
+                requested_features=_features_with_segmentation(["dense_flow"], boundary),
+                left_window=left_window,
+                right_window=right_window,
+                reason=_reason_with_segmentation(
+                    "The directional bridge is feasible but global-motion evidence is borderline; dense flow is budgeted only around this boundary for validation.",
+                    boundary,
+                ),
+                evidence=evidence,
+            )
 
     if boundary.recommended_mechanism == "action_cut" and (
         force_action_verification or 0.6 <= signature.phase_compatibility < 0.9
@@ -104,16 +144,32 @@ def _request_for_boundary(
             1.0,
             0.45 + 0.35 * candidate.motivation_score + 0.20 * candidate.feasibility_score,
         )
+        base_reason = (
+            "A post-render timing revision changed this action boundary; dense flow is mandatory to verify the revised cut location before candidate promotion."
+            if force_action_verification
+            else "The cheap motion-phase signal supports cut-on-action but is not decisive; dense flow can refine the event timing inside a narrow boundary window."
+        )
         return BoundaryAnalysisRequest(
             boundary_index=boundary.boundary_index,
             priority=priority,
-            requested_features=["dense_flow"],
+            requested_features=_features_with_segmentation(["dense_flow"], boundary),
             left_window=left_window,
             right_window=right_window,
-            reason=(
-                "A post-render timing revision changed this action boundary; dense flow is mandatory to verify the revised cut location before candidate promotion."
-                if force_action_verification
-                else "The cheap motion-phase signal supports cut-on-action but is not decisive; dense flow can refine the event timing inside a narrow boundary window."
+            reason=_reason_with_segmentation(base_reason, boundary),
+            evidence=evidence,
+        )
+
+    if _segmentation_motivated(boundary):
+        priority = min(1.0, 0.45 + 0.50 * boundary.occlusion_candidate_score)
+        return BoundaryAnalysisRequest(
+            boundary_index=boundary.boundary_index,
+            priority=priority,
+            requested_features=["segmentation"],
+            left_window=left_window,
+            right_window=right_window,
+            reason=_reason_with_segmentation(
+                "No additional dense-flow/depth refinement is justified by the current transition mechanism.",
+                boundary,
             ),
             evidence=evidence,
         )
@@ -160,7 +216,7 @@ def build_advanced_analysis_plan(
                 reason=(
                     "Mandatory action-timing verification could not be scheduled because the revised boundary is no longer a feasible action-cut opportunity."
                     if is_forced
-                    else "Cheap VIR/CutSignature evidence is sufficient for the current decision; no expensive boundary analysis is justified."
+                    else "Cheap VIR/CutSignature/occlusion evidence is sufficient for the current decision; no expensive boundary analysis is justified."
                 ),
             ))
         elif is_forced:
@@ -186,9 +242,9 @@ def build_advanced_analysis_plan(
         skipped_boundaries=sorted(skipped, key=lambda item: item.boundary_index),
         notes=[
             "This plan schedules expensive analysis only; it does not execute model backends.",
-            "Segmentation is supported by the contract but is not scheduled until cheap subject/occlusion evidence exists.",
+            "Segmentation is requested only when cheap camera-compensated edge/foreground evidence crosses the occlusion threshold; the cue is not treated as a mask.",
             "Depth is currently requested only for feasible zoom-bridge opportunities.",
-            "Dense flow is limited to ambiguous action/directional boundaries or depth-assisted zoom candidates.",
+            "Dense flow is limited to ambiguous action/directional boundaries, depth-assisted zoom candidates, or mandatory post-revision verification.",
             "Post-render action-timing revision boundaries are forced into dense-flow verification even when cheap phase evidence becomes near-certain; mandatory verification may consume the configured budget before optional boundaries.",
         ],
     )

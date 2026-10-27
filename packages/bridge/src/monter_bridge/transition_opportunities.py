@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import Field
 
-from .analysis_models import ShotAnalysis, VirProject
+from .analysis_models import OcclusionCueSample, OcclusionEdge, ShotAnalysis, VirProject
 from .cut_signature import CutSignature, build_cut_signature
 from .models import PortableModel
 from .planning_models import EditPlan, EditSegment
@@ -15,6 +15,7 @@ TransitionOpportunityMechanism = Literal[
     "directional_bridge",
     "zoom_bridge",
 ]
+OcclusionBoundarySide = Literal["none", "outgoing", "incoming", "both"]
 
 
 class TransitionCandidate(PortableModel):
@@ -38,6 +39,9 @@ class BoundaryTransitionOpportunity(PortableModel):
     cut_signature: CutSignature
     recommended_mechanism: TransitionOpportunityMechanism
     candidates: list[TransitionCandidate]
+    occlusion_candidate_score: float = Field(default=0.0, ge=0, le=1)
+    occlusion_side: OcclusionBoundarySide = "none"
+    occlusion_edge: OcclusionEdge = "none"
 
 
 class TransitionOpportunityReport(PortableModel):
@@ -64,8 +68,54 @@ def _bridge_feasibility(outgoing: float, incoming: float, required: float) -> tu
     return outgoing >= required and incoming >= required, max(0.0, score)
 
 
+def _near_occlusion_sample(
+    shot: ShotAnalysis,
+    time_seconds: float,
+    radius_seconds: float = 0.45,
+) -> OcclusionCueSample | None:
+    candidates = [
+        sample
+        for sample in shot.occlusion.samples
+        if abs(sample.time_seconds - time_seconds) <= radius_seconds
+    ]
+    return max(candidates, key=lambda sample: sample.score) if candidates else None
+
+
+def _boundary_occlusion_evidence(
+    left_segment: EditSegment,
+    right_segment: EditSegment,
+    left_shot: ShotAnalysis,
+    right_shot: ShotAnalysis,
+    meaningful_threshold: float = 0.52,
+) -> tuple[float, OcclusionBoundarySide, OcclusionEdge]:
+    outgoing = _near_occlusion_sample(left_shot, left_segment.source_out_seconds)
+    incoming = _near_occlusion_sample(right_shot, right_segment.source_in_seconds)
+    outgoing_score = outgoing.score if outgoing is not None else 0.0
+    incoming_score = incoming.score if incoming is not None else 0.0
+    score = max(outgoing_score, incoming_score)
+
+    outgoing_meaningful = outgoing_score >= meaningful_threshold
+    incoming_meaningful = incoming_score >= meaningful_threshold
+    if outgoing_meaningful and incoming_meaningful:
+        side: OcclusionBoundarySide = "both"
+        if outgoing is not None and incoming is not None and outgoing.dominant_edge == incoming.dominant_edge:
+            edge = outgoing.dominant_edge
+        else:
+            edge = "mixed"
+    elif outgoing_meaningful:
+        side = "outgoing"
+        edge = outgoing.dominant_edge if outgoing is not None else "none"
+    elif incoming_meaningful:
+        side = "incoming"
+        edge = incoming.dominant_edge if incoming is not None else "none"
+    else:
+        side = "none"
+        edge = "none"
+
+    return score, side, edge
+
+
 def _hard_cut_candidate(signature: CutSignature) -> TransitionCandidate:
-    # Hard cuts become more motivated as physical relation evidence gets weaker.
     motivation = max(0.45, 0.9 - 0.45 * signature.relation_score)
     return TransitionCandidate(
         mechanism="hard_cut",
@@ -180,7 +230,7 @@ def _recommend(candidates: list[TransitionCandidate]) -> TransitionOpportunityMe
     feasible = [candidate for candidate in candidates if candidate.feasible]
     if not feasible:
         return "hard_cut"
-    # A non-zero bridge must clear a stronger motivation threshold than a zero-duration cut.
+
     def score(candidate: TransitionCandidate) -> float:
         penalty = 0.08 if candidate.duration_seconds > 0 else 0.0
         return candidate.motivation_score * candidate.feasibility_score - penalty
@@ -203,6 +253,12 @@ def synthesize_transition_opportunities(edit_plan: EditPlan, vir: VirProject) ->
 
         signature = build_cut_signature(left_segment, right_segment, left_shot, right_shot)
         outgoing_handle, incoming_handle = _available_handles(left_segment, right_segment, left_shot, right_shot)
+        occlusion_score, occlusion_side, occlusion_edge = _boundary_occlusion_evidence(
+            left_segment,
+            right_segment,
+            left_shot,
+            right_shot,
+        )
         candidates = [
             _hard_cut_candidate(signature),
             _action_cut_candidate(signature),
@@ -219,6 +275,9 @@ def synthesize_transition_opportunities(edit_plan: EditPlan, vir: VirProject) ->
                 cut_signature=signature,
                 recommended_mechanism=_recommend(candidates),
                 candidates=candidates,
+                occlusion_candidate_score=occlusion_score,
+                occlusion_side=occlusion_side,
+                occlusion_edge=occlusion_edge,
             )
         )
 
@@ -229,6 +288,7 @@ def synthesize_transition_opportunities(edit_plan: EditPlan, vir: VirProject) ->
             "This report scores transition opportunities independently from CTL compilation; CTL v0.2 can promote supported feasible candidates such as directional_bridge.",
             "Hard cuts remain first-class valid decisions at every boundary.",
             "Non-zero bridge candidates require both physical motivation and verified source handles on each side of the cut.",
+            "Cheap camera-compensated occlusion likelihood is boundary evidence only; it does not create an occlusion transition or claim a segmentation mask exists.",
             "Unsupported primitives or candidates adjacent to event-driven timewarps remain opportunities and fall back safely during CTL compilation.",
         ],
     )

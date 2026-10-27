@@ -45,7 +45,7 @@ def test_vir_serializes_with_web_friendly_aliases(tmp_path: Path):
     assert payload["projectId"] == "project_test"
 
 
-def test_analyze_asset_uses_one_combined_motion_sampler_per_shot(monkeypatch):
+def test_analyze_asset_uses_one_combined_visual_sampler_per_shot(monkeypatch):
     asset = project_with_asset().assets[0]
     ranges = [
         TimeRange(start_seconds=0.0, end_seconds=1.5),
@@ -57,10 +57,11 @@ def test_analyze_asset_uses_one_combined_motion_sampler_per_shot(monkeypatch):
 
     def fake_sample(video_path, time_range, *args, **kwargs):
         calls.append(time_range)
-        return [], []
+        return [], [], []
 
     monkeypatch.setattr(analysis_module, "sample_motion_signals", fake_sample)
     shots = analyze_asset(asset, Path("proxy.mp4"))
 
     assert len(shots) == 2
     assert calls == ranges
+    assert all(shot.occlusion.samples == [] for shot in shots)
