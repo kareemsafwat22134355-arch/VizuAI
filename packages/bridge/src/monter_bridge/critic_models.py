@@ -16,6 +16,7 @@ RevisionKind = Literal[
     "review_transition",
     "review_analysis",
 ]
+RevisionVerificationKind = Literal["advanced_action_timing"]
 
 
 class CriticMetric(PortableModel):
@@ -52,6 +53,7 @@ class RevisionAction(PortableModel):
     left_shift_seconds: float | None = None
     right_shift_seconds: float | None = None
     boundary_shift_seconds: float | None = None
+    verification_kind: RevisionVerificationKind | None = None
 
 
 class RevisionReport(PortableModel):
