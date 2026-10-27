@@ -9,6 +9,10 @@ from .transition_opportunities import synthesize_transition_opportunities
 from .transition_refinement_models import TransitionRefinementReport
 
 
+def _advanced_evidence_key(key: str) -> str:
+    return f"advanced{key[:1].upper()}{key[1:]}" if key else "advancedEvidence"
+
+
 def compile_ctl(
     edit_plan: EditPlan,
     vir: VirProject,
@@ -83,19 +87,23 @@ def compile_ctl(
                 evidence["advancedLeftDirectionalCoherence"] = refinement.left_directional_coherence
             if refinement.right_directional_coherence is not None:
                 evidence["advancedRightDirectionalCoherence"] = refinement.right_directional_coherence
+            for key, value in refinement.evidence.items():
+                evidence[_advanced_evidence_key(key)] = value
 
             if refinement.status == "demoted":
                 if refinement.refined_mechanism == "hard_cut":
+                    reason = (
+                        "Selective dense flow localized incompatible outgoing/incoming action timing; preserve a deliberate hard cut instead of forcing false cut-on-action continuity."
+                        if refinement.base_mechanism == "action_cut"
+                        else "Selective dense flow contradicted the coarse directional match; preserve a deliberate hard cut instead of compiling the proposed bridge."
+                    )
                     transitions.append(CtlTransition(
                         boundary_index=boundary_index,
                         mechanism="hard_cut",
                         duration_seconds=0.0,
                         relation_score=signature.relation_score,
                         evidence=evidence,
-                        reason=(
-                            "Selective dense flow contradicted the coarse directional match; preserve a deliberate hard cut "
-                            "instead of compiling the proposed bridge."
-                        ),
+                        reason=reason,
                     ))
                     continue
                 if refinement.refined_mechanism == "action_cut":
