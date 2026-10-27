@@ -110,13 +110,13 @@ def test_filter_preserves_boundary_identity_for_motion_match_trim_realign():
 
 def test_filter_preserves_boundary_identity_for_motion_match_boundary_roll():
     source = editorial(findings=[CriticFinding(
-        code="motion_match_boundary_roll_weak",
+        code="motion_match_boundary_roll_needed",
         severity="warning",
         boundary_index=3,
         message="recoverable roll timing",
     )])
     consolidated = final(findings=[FinalCriticFinding(
-        code="motion_match_boundary_roll_weak",
+        code="motion_match_boundary_roll_needed",
         domain="editorial",
         severity="warning",
         reviseability="automatic_candidate",
@@ -128,7 +128,7 @@ def test_filter_preserves_boundary_identity_for_motion_match_boundary_roll():
     filtered = filter_automatic_editorial_critic(source, consolidated)
     assert filtered.status == "needs_revision"
     assert len(filtered.findings) == 1
-    assert filtered.findings[0].code == "motion_match_boundary_roll_weak"
+    assert filtered.findings[0].code == "motion_match_boundary_roll_needed"
     assert filtered.findings[0].boundary_index == 3
     assert filtered.findings[0].segment_id is None
 
