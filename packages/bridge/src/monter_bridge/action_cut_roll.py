@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from copy import deepcopy
+
 from pydantic import Field
 
 from .analysis_models import VirProject
 from .models import PortableModel
 from .planning_models import EditPlan
+from .transition_opportunities import synthesize_transition_opportunities
 
 
 class ActionCutBoundaryRoll(PortableModel):
@@ -57,8 +60,26 @@ def propose_action_cut_boundary_roll(
         return None
     if right_source_in >= right.source_out_seconds - 1e-6:
         return None
-
     if abs(left_timeline_out - right_timeline_in) > 1e-6:
+        return None
+
+    # The post-render candidate must be able to re-enter the advanced action-cut
+    # scheduler after mutation. Otherwise a revision could make its own evidence
+    # disappear by turning the boundary into a cheap hard cut, then pass without
+    # having dense flow verify the new timing.
+    rolled = deepcopy(edit)
+    rolled_left = rolled.segments[boundary_index - 1]
+    rolled_right = rolled.segments[boundary_index]
+    rolled_left.timeline_out_seconds = left_timeline_out
+    rolled_left.source_out_seconds = left_source_out
+    rolled_right.timeline_in_seconds = right_timeline_in
+    rolled_right.source_in_seconds = right_source_in
+    opportunities = synthesize_transition_opportunities(rolled, vir)
+    rolled_boundary = next(
+        (item for item in opportunities.boundaries if item.boundary_index == boundary_index),
+        None,
+    )
+    if rolled_boundary is None or rolled_boundary.recommended_mechanism != "action_cut":
         return None
 
     return ActionCutBoundaryRoll(
@@ -69,7 +90,8 @@ def propose_action_cut_boundary_roll(
         boundary_shift_seconds=delta,
         reason=(
             "Reliable selective dense-flow timing evidence supports a common bounded action-cut shift; "
-            "a roll edit can move the shared timeline/source boundary while preserving total sequence duration."
+            "a roll edit can move the shared timeline/source boundary while preserving total sequence duration, "
+            "and the rolled edit remains eligible for action-cut re-analysis."
         ),
     )
 
