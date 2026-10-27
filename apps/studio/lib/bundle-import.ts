@@ -92,6 +92,9 @@ export type PostRenderRevisionReport = {
   candidateAutomaticCandidates?: number | null;
   changedSegments: string[];
   changedBoundaries?: number[];
+  verificationStatus?: "not_required" | "pass" | "failed";
+  verifiedBoundaries?: number[];
+  failedVerificationBoundaries?: number[];
   candidateDir?: string | null;
   baselineSnapshotDir?: string | null;
   promotedArtifacts: string[];
@@ -154,6 +157,18 @@ function parsePostRenderRevision(bytes: Uint8Array): PostRenderRevisionReport {
   }
   if (value.changedBoundaries !== undefined && !Array.isArray(value.changedBoundaries)) {
     throw new Error("post-render-revision-report.json: invalid changedBoundaries");
+  }
+  if (
+    value.verificationStatus !== undefined
+    && !["not_required", "pass", "failed"].includes(value.verificationStatus)
+  ) {
+    throw new Error("post-render-revision-report.json: invalid verificationStatus");
+  }
+  if (value.verifiedBoundaries !== undefined && !Array.isArray(value.verifiedBoundaries)) {
+    throw new Error("post-render-revision-report.json: invalid verifiedBoundaries");
+  }
+  if (value.failedVerificationBoundaries !== undefined && !Array.isArray(value.failedVerificationBoundaries)) {
+    throw new Error("post-render-revision-report.json: invalid failedVerificationBoundaries");
   }
   return value as PostRenderRevisionReport;
 }

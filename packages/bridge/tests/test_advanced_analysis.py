@@ -96,8 +96,32 @@ def test_ambiguous_action_cut_gets_dense_flow_refinement():
     assert plan.requests[0].requested_features == ["dense_flow"]
 
 
-def test_adjacent_timewarp_blocks_extra_transition_analysis():
-    plan = build_advanced_analysis_plan(ctl(adjacent_timewarp=True), report("zoom_bridge", zoom=1.0, confidence=.7))
+def test_strong_action_cut_is_forced_back_into_dense_flow_for_revision_verification():
+    strong = report("action_cut", phase=.95, relation=.7, direction=.3, confidence=.8)
+    normal = build_advanced_analysis_plan(ctl(), strong)
+    assert normal.requests == []
+
+    forced = build_advanced_analysis_plan(
+        ctl(),
+        strong,
+        max_boundaries=1,
+        forced_action_boundaries={1},
+    )
+    assert len(forced.requests) == 1
+    request = forced.requests[0]
+    assert request.boundary_index == 1
+    assert request.requested_features == ["dense_flow"]
+    assert request.priority == 1.0
+    assert request.evidence["forcedRevisionVerification"] is True
+    assert "mandatory" in request.reason.lower()
+
+
+def test_adjacent_timewarp_blocks_extra_transition_analysis_even_when_forced():
+    plan = build_advanced_analysis_plan(
+        ctl(adjacent_timewarp=True),
+        report("action_cut", phase=.95, relation=.7, direction=.3, confidence=.8),
+        forced_action_boundaries={1},
+    )
     assert plan.requests == []
     assert "timewarp" in plan.skipped_boundaries[0].reason.lower()
 
