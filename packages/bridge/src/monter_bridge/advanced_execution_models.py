@@ -22,6 +22,10 @@ class DenseFlowWindowSummary(PortableModel):
     mean_dx: float
     mean_dy: float
     directional_coherence: float = Field(ge=0, le=1)
+    peak_magnitude: float = Field(default=0.0, ge=0)
+    peak_time_seconds: float | None = Field(default=None, ge=0)
+    onset_time_seconds: float | None = Field(default=None, ge=0)
+    temporal_contrast: float = Field(default=0.0, ge=0)
 
 
 class FeatureExecutionResult(PortableModel):
@@ -38,6 +42,7 @@ class BoundaryExecutionResult(PortableModel):
     left_flow: DenseFlowWindowSummary | None = None
     right_flow: DenseFlowWindowSummary | None = None
     flow_direction_compatibility: float | None = Field(default=None, ge=0, le=1)
+    request_evidence: dict[str, float | str | bool] = Field(default_factory=dict)
     features: list[FeatureExecutionResult] = Field(default_factory=list)
 
 
