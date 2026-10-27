@@ -38,6 +38,7 @@ def _dense_flow_window(
 
     previous_gray: np.ndarray | None = None
     frame_index = start_frame
+    pair_times_seconds: list[float] = []
     pair_mean_magnitudes: list[float] = []
     pair_p90_magnitudes: list[float] = []
     pair_dx: list[float] = []
@@ -71,6 +72,7 @@ def _dense_flow_window(
                     dy = float(np.median(flow[..., 1]))
                     vector_norm = math.hypot(dx, dy)
                     coherence = min(1.0, vector_norm / (mean_magnitude + 1e-6)) if mean_magnitude > 0 else 0.0
+                    pair_times_seconds.append(frame_index / source_fps)
                     pair_mean_magnitudes.append(mean_magnitude)
                     pair_p90_magnitudes.append(p90_magnitude)
                     pair_dx.append(dx)
@@ -81,6 +83,24 @@ def _dense_flow_window(
     finally:
         capture.release()
 
+    mean_magnitude = float(np.mean(pair_mean_magnitudes)) if pair_mean_magnitudes else 0.0
+    peak_magnitude = 0.0
+    peak_time_seconds: float | None = None
+    onset_time_seconds: float | None = None
+    temporal_contrast = 0.0
+
+    if pair_mean_magnitudes:
+        peak_index = int(np.argmax(pair_mean_magnitudes))
+        peak_magnitude = float(pair_mean_magnitudes[peak_index])
+        peak_time_seconds = pair_times_seconds[peak_index]
+        temporal_contrast = peak_magnitude / (mean_magnitude + 1e-6) if mean_magnitude > 0 else 0.0
+        if peak_magnitude > 1e-6:
+            onset_threshold = peak_magnitude * 0.35
+            for index in range(peak_index + 1):
+                if pair_mean_magnitudes[index] >= onset_threshold:
+                    onset_time_seconds = pair_times_seconds[index]
+                    break
+
     return DenseFlowWindowSummary(
         segment_id=window.segment_id,
         asset_id=window.asset_id,
@@ -88,11 +108,15 @@ def _dense_flow_window(
         source_start_seconds=window.source_start_seconds,
         source_end_seconds=window.source_end_seconds,
         sample_count=len(pair_mean_magnitudes),
-        mean_magnitude=float(np.mean(pair_mean_magnitudes)) if pair_mean_magnitudes else 0.0,
+        mean_magnitude=mean_magnitude,
         p90_magnitude=float(np.mean(pair_p90_magnitudes)) if pair_p90_magnitudes else 0.0,
         mean_dx=float(np.mean(pair_dx)) if pair_dx else 0.0,
         mean_dy=float(np.mean(pair_dy)) if pair_dy else 0.0,
         directional_coherence=float(np.mean(pair_coherence)) if pair_coherence else 0.0,
+        peak_magnitude=peak_magnitude,
+        peak_time_seconds=peak_time_seconds,
+        onset_time_seconds=onset_time_seconds,
+        temporal_contrast=temporal_contrast,
     )
 
 
@@ -119,7 +143,11 @@ def execute_advanced_analysis(
     results: list[BoundaryExecutionResult] = []
 
     for request in plan.requests:
-        boundary = BoundaryExecutionResult(boundary_index=request.boundary_index, priority=request.priority)
+        boundary = BoundaryExecutionResult(
+            boundary_index=request.boundary_index,
+            priority=request.priority,
+            request_evidence=dict(request.evidence),
+        )
         feature_results: list[FeatureExecutionResult] = []
 
         if "dense_flow" in request.requested_features:
@@ -139,22 +167,35 @@ def execute_advanced_analysis(
                 boundary.right_flow = right_flow
                 boundary.flow_direction_compatibility = compatibility
                 completed = left_flow.sample_count > 0 and right_flow.sample_count > 0
+                metrics: dict[str, float | int | str | bool] = {
+                    "leftSampleCount": left_flow.sample_count,
+                    "rightSampleCount": right_flow.sample_count,
+                    "leftMeanMagnitude": left_flow.mean_magnitude,
+                    "rightMeanMagnitude": right_flow.mean_magnitude,
+                    "leftPeakMagnitude": left_flow.peak_magnitude,
+                    "rightPeakMagnitude": right_flow.peak_magnitude,
+                    "leftTemporalContrast": left_flow.temporal_contrast,
+                    "rightTemporalContrast": right_flow.temporal_contrast,
+                    "directionCompatibility": compatibility,
+                }
+                if left_flow.peak_time_seconds is not None:
+                    metrics["leftPeakTimeSeconds"] = left_flow.peak_time_seconds
+                if left_flow.onset_time_seconds is not None:
+                    metrics["leftOnsetTimeSeconds"] = left_flow.onset_time_seconds
+                if right_flow.peak_time_seconds is not None:
+                    metrics["rightPeakTimeSeconds"] = right_flow.peak_time_seconds
+                if right_flow.onset_time_seconds is not None:
+                    metrics["rightOnsetTimeSeconds"] = right_flow.onset_time_seconds
                 feature_results.append(FeatureExecutionResult(
                     feature="dense_flow",
                     status="completed" if completed else "failed",
                     backend="opencv-farneback",
                     reason=(
-                        "Dense optical flow executed only inside the scheduler-selected source windows."
+                        "Dense optical flow executed only inside the scheduler-selected source windows, preserving temporal peak/onset evidence for boundary timing."
                         if completed
                         else "Dense optical flow could not produce at least one frame pair on both selected windows."
                     ),
-                    metrics={
-                        "leftSampleCount": left_flow.sample_count,
-                        "rightSampleCount": right_flow.sample_count,
-                        "leftMeanMagnitude": left_flow.mean_magnitude,
-                        "rightMeanMagnitude": right_flow.mean_magnitude,
-                        "directionCompatibility": compatibility,
-                    },
+                    metrics=metrics,
                 ))
             except Exception as exc:
                 feature_results.append(FeatureExecutionResult(
@@ -171,7 +212,7 @@ def execute_advanced_analysis(
                 feature=feature,
                 status="backend_unavailable",
                 backend="unconfigured",
-                reason=f"{feature} was requested by the scheduler, but v0.17 does not install or execute a heavyweight backend automatically.",
+                reason=f"{feature} was requested by the scheduler, but no heavyweight backend is installed automatically.",
             ))
 
         boundary.features = feature_results
@@ -182,6 +223,7 @@ def execute_advanced_analysis(
         boundaries=results,
         notes=[
             "Dense flow uses OpenCV Farneback only on scheduler-selected windows; it is a deterministic CPU baseline, not RAFT.",
+            "Dense-flow summaries now preserve temporal peak/onset evidence so action-cut timing can be refined instead of using direction averages only.",
             "Depth and segmentation requests remain explicit backend_unavailable results until real optional backends are configured.",
             "No heavyweight model is downloaded automatically by this executor.",
         ],
