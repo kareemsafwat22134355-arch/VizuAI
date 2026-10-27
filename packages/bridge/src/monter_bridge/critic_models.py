@@ -11,6 +11,7 @@ CriticStatus = Literal["pass", "needs_revision"]
 RevisionKind = Literal[
     "replace_segment",
     "realign_boundary",
+    "roll_boundary",
     "review_duration",
     "review_transition",
     "review_analysis",
@@ -49,6 +50,7 @@ class RevisionAction(PortableModel):
     to_shot_id: str | None = None
     left_shift_seconds: float | None = None
     right_shift_seconds: float | None = None
+    boundary_shift_seconds: float | None = None
 
 
 class RevisionReport(PortableModel):

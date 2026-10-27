@@ -1,6 +1,6 @@
 # MONTER v0.25+ — Bounded Post-Render Revision
 
-v0.25 closes the first safe revision loop after MONTER has actually rendered and re-watched its output. v0.26 expands the deterministic revision vocabulary without relaxing the transaction safety rules.
+v0.25 closes the first safe revision loop after MONTER has actually rendered and re-watched its output. v0.26 adds bounded slip edits for weak motion-match timing, and v0.27 adds a bounded roll-edit fallback without relaxing the transaction safety rules.
 
 The rule is deliberately narrow:
 
@@ -34,15 +34,20 @@ energy_mismatch
 low_confidence_selection
 immediate_repetition
 motion_match_timing_weak
+motion_match_boundary_roll_needed
 ```
 
-`motion_match_timing_weak` is added in v0.26 and is constrained to bounded source-trim realignment on an existing `motion_match_cut`; it does not authorize changing a deliberate hard cut.
+`motion_match_timing_weak` is a bounded slip edit on an existing `motion_match_cut`; it moves source windows while preserving the timeline boundary.
+
+`motion_match_boundary_roll_needed` is a bounded roll-edit fallback. It is eligible only when the less-invasive slip edit is not feasible. The boundary moves on the timeline while adjacent clip durations change by equal-and-opposite amounts, preserving total sequence duration.
+
+Neither finding authorizes changing a deliberate `hard_cut`.
 
 Everything else remains manual-only.
 
 ## Why integrity failures block edit mutation
 
-If the MP4 has the wrong duration, is catastrophically blank, or has unsafe audio headroom, changing shot selection or trim timing is not a valid repair strategy.
+If the MP4 has the wrong duration, is catastrophically blank, or has unsafe audio headroom, changing shot selection or cut timing is not a valid repair strategy.
 
 MONTER therefore refuses a post-render edit mutation whenever the Final Critic contains an integrity error.
 
@@ -129,9 +134,11 @@ It records:
 - baseline and candidate Final Critic statuses
 - automatic-candidate counts before/after
 - changed segment IDs
-- changed boundary indices (v0.26 additive field)
+- changed boundary indices
 - local candidate/baseline directory labels
 - promoted artifact names
+
+`changedBoundaries` covers both slip and roll boundary revisions, so trim-only and timeline-boundary revisions remain auditable without expanding the schema again.
 
 The report is included in `.monter.zip`.
 

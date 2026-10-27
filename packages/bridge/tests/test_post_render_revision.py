@@ -108,6 +108,31 @@ def test_filter_preserves_boundary_identity_for_motion_match_trim_realign():
     assert filtered.findings[0].segment_id is None
 
 
+def test_filter_preserves_boundary_identity_for_motion_match_boundary_roll():
+    source = editorial(findings=[CriticFinding(
+        code="motion_match_boundary_roll_needed",
+        severity="warning",
+        boundary_index=3,
+        message="recoverable roll timing",
+    )])
+    consolidated = final(findings=[FinalCriticFinding(
+        code="motion_match_boundary_roll_needed",
+        domain="editorial",
+        severity="warning",
+        reviseability="automatic_candidate",
+        message="recoverable roll timing",
+        source_artifact="critic-report.json",
+        boundary_index=3,
+    )])
+
+    filtered = filter_automatic_editorial_critic(source, consolidated)
+    assert filtered.status == "needs_revision"
+    assert len(filtered.findings) == 1
+    assert filtered.findings[0].code == "motion_match_boundary_roll_needed"
+    assert filtered.findings[0].boundary_index == 3
+    assert filtered.findings[0].segment_id is None
+
+
 def test_candidate_promotion_snapshots_baseline_and_ignores_stale_candidate_files(tmp_path: Path):
     work = tmp_path / ".monter"
     work.mkdir()

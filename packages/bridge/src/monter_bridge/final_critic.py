@@ -10,6 +10,7 @@ AUTO_EDITORIAL_CODES = {
     "low_confidence_selection",
     "immediate_repetition",
     "motion_match_timing_weak",
+    "motion_match_boundary_roll_needed",
 }
 
 

@@ -6,6 +6,7 @@ from .analysis_models import VirProject
 from .ctl_models import CtlProgram
 from .critic_models import CriticFinding, CriticMetric, CriticReport
 from .motion_match_realign import propose_motion_match_realign
+from .motion_match_roll import propose_motion_match_boundary_roll
 from .planning_models import EditPlan
 
 CORE_REVISION_METRICS = {
@@ -14,6 +15,7 @@ CORE_REVISION_METRICS = {
     "low_confidence_ratio",
     "adjacent_repeat_count",
     "recoverable_motion_match_timing_count",
+    "recoverable_motion_match_roll_count",
 }
 
 
@@ -109,10 +111,12 @@ def critique_edit(edit: EditPlan, ctl: CtlProgram, vir: VirProject) -> CriticRep
             message="Every boundary is labeled with a mechanism; preserve at least one deliberate hard cut.",
         ))
 
-    # Only motion_match_cut boundaries are eligible for source-trim timing repair.
-    # Deliberate hard cuts are never turned into action cuts by this heuristic.
+    # Timing repair is deliberately scoped to existing motion_match_cut boundaries.
+    # Slip is preferred because it preserves segment durations. Roll is considered only
+    # when a safe slip is not feasible and both sides support the same boundary nudge.
     warped_segment_ids = {warp.segment_id for warp in ctl.time_warps}
     recoverable_motion_match_timing = 0
+    recoverable_motion_match_roll = 0
     for transition in ctl.transitions:
         if transition.mechanism != "motion_match_cut":
             continue
@@ -123,26 +127,50 @@ def critique_edit(edit: EditPlan, ctl: CtlProgram, vir: VirProject) -> CriticRep
         right = edit.segments[boundary_index]
         if left.id in warped_segment_ids or right.id in warped_segment_ids:
             continue
-        proposal = propose_motion_match_realign(edit, vir, boundary_index)
-        if proposal is None:
+
+        slip = propose_motion_match_realign(edit, vir, boundary_index)
+        if slip is not None:
+            recoverable_motion_match_timing += 1
+            findings.append(CriticFinding(
+                code="motion_match_timing_weak",
+                severity="warning",
+                boundary_index=boundary_index,
+                message=(
+                    f"Motion-match boundary {boundary_index} has phase compatibility "
+                    f"{slip.before_phase_compatibility:.2f}, but bounded source-trim shifts "
+                    f"({slip.left_shift_seconds:+.3f}s / {slip.right_shift_seconds:+.3f}s) "
+                    f"can raise it to {slip.after_phase_compatibility:.2f}."
+                ),
+            ))
             continue
-        recoverable_motion_match_timing += 1
+
+        roll = propose_motion_match_boundary_roll(edit, vir, boundary_index)
+        if roll is None:
+            continue
+        recoverable_motion_match_roll += 1
         findings.append(CriticFinding(
-            code="motion_match_timing_weak",
+            code="motion_match_boundary_roll_needed",
             severity="warning",
             boundary_index=boundary_index,
             message=(
-                f"Motion-match boundary {boundary_index} has phase compatibility "
-                f"{proposal.before_phase_compatibility:.2f}, but bounded source-trim shifts "
-                f"({proposal.left_shift_seconds:+.3f}s / {proposal.right_shift_seconds:+.3f}s) "
-                f"can raise it to {proposal.after_phase_compatibility:.2f}."
+                f"Motion-match boundary {boundary_index} cannot be fixed with the less-invasive slip edit, "
+                f"but a bounded roll of {roll.boundary_shift_seconds:+.3f}s can raise phase compatibility "
+                f"from {roll.before_phase_compatibility:.2f} to {roll.after_phase_compatibility:.2f} "
+                "without changing total sequence duration."
             ),
         ))
+
     metrics.append(CriticMetric(
         name="recoverable_motion_match_timing_count",
         value=float(recoverable_motion_match_timing),
-        target="0 recoverable weak-timing motion-match boundaries",
+        target="0 recoverable weak-timing motion-match slip boundaries",
         passed=recoverable_motion_match_timing == 0,
+    ))
+    metrics.append(CriticMetric(
+        name="recoverable_motion_match_roll_count",
+        value=float(recoverable_motion_match_roll),
+        target="0 recoverable weak-timing motion-match roll boundaries",
+        passed=recoverable_motion_match_roll == 0,
     ))
 
     if vir.warnings:
@@ -163,6 +191,6 @@ def critique_edit(edit: EditPlan, ctl: CtlProgram, vir: VirProject) -> CriticRep
         notes=[
             "Metrics remain separate by design; MONTER does not collapse editorial quality into one aggregate score.",
             "Core metric failures trigger a bounded revision pass; other warnings can remain intentional editorial choices.",
-            "Source-trim timing repair is considered only for existing motion_match_cut boundaries with strong reachable motion anchors and no adjacent timewarp.",
+            "Motion-match timing repair prefers source-window slip; a bounded timeline roll is considered only as fallback, and deliberate hard cuts/timewarp-adjacent boundaries remain protected.",
         ],
     )
