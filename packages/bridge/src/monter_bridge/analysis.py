@@ -13,10 +13,18 @@ from .analysis_cache import (
     load_cached_analysis,
     write_cached_analysis,
 )
-from .analysis_models import GlobalMotionSample, MotionSample, ShotAnalysis, TimeRange, VirProject
+from .analysis_models import (
+    GlobalMotionSample,
+    MotionSample,
+    OcclusionCueSample,
+    ShotAnalysis,
+    TimeRange,
+    VirProject,
+)
 from .global_motion import estimate_pair, summarize_global_motion
 from .models import MediaAsset, MonterProject
 from .motion import analysis_gray, build_motion_anchors, flow_magnitude
+from .occlusion import measure_occlusion_cue, summarize_occlusion
 from .proxy import proxy_path_for
 from .shots import detect_shots
 
@@ -26,8 +34,8 @@ def sample_motion_signals(
     time_range: TimeRange,
     sample_fps: float = DEFAULT_SAMPLE_FPS,
     analysis_width: int = DEFAULT_ANALYSIS_WIDTH,
-) -> tuple[list[MotionSample], list[GlobalMotionSample]]:
-    """Extract local flow and global camera motion from the same decoded frames."""
+) -> tuple[list[MotionSample], list[GlobalMotionSample], list[OcclusionCueSample]]:
+    """Extract local flow, global camera motion, and cheap occlusion cues from one decode pass."""
     if sample_fps <= 0:
         raise ValueError("sample_fps must be > 0")
 
@@ -43,6 +51,7 @@ def sample_motion_signals(
 
     motion_samples: list[MotionSample] = []
     global_samples: list[GlobalMotionSample] = []
+    occlusion_samples: list[OcclusionCueSample] = []
     previous_gray: np.ndarray | None = None
     frame_index = start_frame
 
@@ -63,6 +72,14 @@ def sample_motion_signals(
                         )
                     )
                     estimate = estimate_pair(previous_gray, gray)
+                    occlusion_samples.append(
+                        measure_occlusion_cue(
+                            previous_gray,
+                            gray,
+                            timestamp,
+                            estimate,
+                        )
+                    )
                     if estimate is not None:
                         tx, ty, rotation, scale, inlier_ratio = estimate
                         global_samples.append(
@@ -81,7 +98,7 @@ def sample_motion_signals(
     finally:
         capture.release()
 
-    return motion_samples, global_samples
+    return motion_samples, global_samples, occlusion_samples
 
 
 def analyze_asset(asset: MediaAsset, proxy_path: Path) -> list[ShotAnalysis]:
@@ -93,7 +110,7 @@ def analyze_asset(asset: MediaAsset, proxy_path: Path) -> list[ShotAnalysis]:
     analyses: list[ShotAnalysis] = []
 
     for index, shot_range in enumerate(shots):
-        samples, global_samples = sample_motion_signals(proxy_path, shot_range)
+        samples, global_samples, occlusion_samples = sample_motion_signals(proxy_path, shot_range)
         magnitudes = [sample.magnitude for sample in samples]
         analyses.append(
             ShotAnalysis(
@@ -105,6 +122,7 @@ def analyze_asset(asset: MediaAsset, proxy_path: Path) -> list[ShotAnalysis]:
                 motion_samples=samples,
                 edit_anchors=build_motion_anchors(samples, shot_range),
                 global_motion=summarize_global_motion(global_samples),
+                occlusion=summarize_occlusion(occlusion_samples),
             )
         )
 
