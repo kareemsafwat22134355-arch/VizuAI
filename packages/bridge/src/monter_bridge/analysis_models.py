@@ -11,6 +11,7 @@ VIR_SCHEMA_VERSION = "vir-0.1"
 AnchorType = Literal["clip_start", "clip_end", "motion_onset", "motion_peak", "motion_settle"]
 ScreenDirection = Literal["static", "left", "right", "up", "down", "mixed"]
 ZoomDirection = Literal["static", "in", "out", "mixed"]
+OcclusionEdge = Literal["none", "left", "right", "top", "bottom", "mixed"]
 
 
 class TimeRange(PortableModel):
@@ -53,6 +54,25 @@ class GlobalMotionSummary(PortableModel):
     samples: list[GlobalMotionSample] = Field(default_factory=list)
 
 
+class OcclusionCueSample(PortableModel):
+    time_seconds: float = Field(ge=0)
+    score: float = Field(ge=0, le=1)
+    residual_change_fraction: float = Field(ge=0, le=1)
+    largest_component_fraction: float = Field(ge=0, le=1)
+    edge_contact_fraction: float = Field(ge=0, le=1)
+    dominant_edge: OcclusionEdge = "none"
+    compensation_confidence: float = Field(default=0.0, ge=0, le=1)
+
+
+class OcclusionCueSummary(PortableModel):
+    peak_score: float = Field(default=0.0, ge=0, le=1)
+    mean_score: float = Field(default=0.0, ge=0, le=1)
+    peak_time_seconds: float | None = Field(default=None, ge=0)
+    dominant_edge: OcclusionEdge = "none"
+    confidence: float = Field(default=0.0, ge=0, le=1)
+    samples: list[OcclusionCueSample] = Field(default_factory=list)
+
+
 class EditAnchor(PortableModel):
     type: AnchorType
     time_seconds: float = Field(ge=0)
@@ -69,6 +89,7 @@ class ShotAnalysis(PortableModel):
     motion_samples: list[MotionSample]
     edit_anchors: list[EditAnchor]
     global_motion: GlobalMotionSummary = Field(default_factory=GlobalMotionSummary)
+    occlusion: OcclusionCueSummary = Field(default_factory=OcclusionCueSummary)
 
 
 class VirProject(PortableModel):
