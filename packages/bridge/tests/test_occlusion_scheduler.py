@@ -1,4 +1,5 @@
 from monter_bridge.advanced_analysis import build_advanced_analysis_plan
+from monter_bridge.analysis_models import OcclusionCueSample
 from monter_bridge.ctl_models import CtlClip, CtlProgram, CtlTransition
 from monter_bridge.cut_signature import CutSignature
 from monter_bridge.transition_opportunities import (
@@ -27,6 +28,20 @@ def _ctl(adjacent_timewarp: bool = False) -> CtlProgram:
     )
 
 
+def _seed(score: float, edge: str, time_seconds: float, x: float) -> OcclusionCueSample:
+    return OcclusionCueSample(
+        time_seconds=time_seconds,
+        score=score,
+        residual_change_fraction=.24,
+        largest_component_fraction=.19,
+        largest_component_bbox_xywh_norm=[x, .2, .24, .58],
+        largest_component_centroid_xy_norm=[x + .12, .49],
+        edge_contact_fraction=.7,
+        dominant_edge=edge,
+        compensation_confidence=.9,
+    )
+
+
 def _report(
     mechanism: str = "hard_cut",
     *,
@@ -36,6 +51,7 @@ def _report(
     phase: float = .15,
     zoom: float = .7,
     confidence: float = .5,
+    include_geometry: bool = True,
 ) -> TransitionOpportunityReport:
     candidate = TransitionCandidate(
         mechanism=mechanism,
@@ -48,6 +64,12 @@ def _report(
         parameters={},
         reason="fixture",
     )
+    outgoing_seed = None
+    incoming_seed = None
+    if include_geometry and occlusion_side in {"outgoing", "both"}:
+        outgoing_seed = _seed(occlusion_score, "left", 1.92, 0.0)
+    if include_geometry and occlusion_side in {"incoming", "both"}:
+        incoming_seed = _seed(occlusion_score, "right", 1.08, .76)
     boundary = BoundaryTransitionOpportunity(
         boundary_index=1,
         left_segment_id="s1",
@@ -66,6 +88,8 @@ def _report(
         occlusion_candidate_score=occlusion_score,
         occlusion_side=occlusion_side,
         occlusion_edge=occlusion_edge,
+        outgoing_occlusion_seed=outgoing_seed,
+        incoming_occlusion_seed=incoming_seed,
     )
     return TransitionOpportunityReport(project_id="p", boundaries=[boundary])
 
@@ -82,7 +106,26 @@ def test_strong_occlusion_can_schedule_segmentation_without_other_expensive_feat
     assert request.evidence["occlusionCandidateScore"] == .82
     assert request.evidence["occlusionSide"] == "outgoing"
     assert request.evidence["occlusionEdge"] == "left"
+    assert request.left_segmentation_prompt is not None
+    assert request.right_segmentation_prompt is None
+    assert request.left_segmentation_prompt.point_xy_norm == [.12, .49]
+    assert request.left_segmentation_prompt.box_xyxy_norm == [0.0, .2, .24, .78]
+    assert request.left_segmentation_prompt.provenance == "camera_compensated_largest_residual_component"
     assert "segmentation" in request.reason.lower()
+
+
+def test_strong_score_without_prompt_geometry_fails_closed_to_cheap_path():
+    plan = build_advanced_analysis_plan(
+        _ctl(),
+        _report(
+            occlusion_score=.82,
+            occlusion_side="outgoing",
+            occlusion_edge="left",
+            include_geometry=False,
+        ),
+    )
+
+    assert plan.requests == []
 
 
 def test_subthreshold_occlusion_stays_cheap():
@@ -107,7 +150,10 @@ def test_occlusion_segmentation_is_merged_into_ambiguous_action_dense_flow_reque
     )
 
     assert len(plan.requests) == 1
-    assert plan.requests[0].requested_features == ["dense_flow", "segmentation"]
+    request = plan.requests[0]
+    assert request.requested_features == ["dense_flow", "segmentation"]
+    assert request.left_segmentation_prompt is None
+    assert request.right_segmentation_prompt is not None
 
 
 def test_occlusion_segmentation_is_merged_into_zoom_analysis_request():
@@ -124,7 +170,10 @@ def test_occlusion_segmentation_is_merged_into_zoom_analysis_request():
     )
 
     assert len(plan.requests) == 1
-    assert plan.requests[0].requested_features == ["dense_flow", "depth", "segmentation"]
+    request = plan.requests[0]
+    assert request.requested_features == ["dense_flow", "depth", "segmentation"]
+    assert request.left_segmentation_prompt is not None
+    assert request.right_segmentation_prompt is not None
 
 
 def test_timewarp_ownership_blocks_segmentation_even_with_strong_occlusion():
