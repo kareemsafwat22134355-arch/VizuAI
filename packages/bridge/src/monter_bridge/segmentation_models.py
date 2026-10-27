@@ -36,6 +36,7 @@ class SegmentationWindowArtifact(PortableModel):
     sample_fps: float = Field(gt=0)
     analysis_width: int = Field(ge=64)
     backend: SegmentationBackendDescriptor
+    input_digest: str
     cache_key: str
     cache_hit: bool = False
     frames: list[SegmentationFrameArtifact] = Field(default_factory=list)
