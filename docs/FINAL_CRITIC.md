@@ -19,7 +19,7 @@ For example:
 ```text
 energy_mismatch
 motion_match_timing_weak
-motion_match_boundary_roll_weak
+motion_match_boundary_roll_needed
 ```
 
 may be addressable by a deterministic edit action.
@@ -78,14 +78,14 @@ energy_mismatch
 low_confidence_selection
 immediate_repetition
 motion_match_timing_weak
-motion_match_boundary_roll_weak
+motion_match_boundary_roll_needed
 ```
 
 The first three are segment-replacement actions.
 
 `motion_match_timing_weak`, added in v0.26, is a bounded **slip edit**: source windows move while timeline cut position and clip durations stay fixed.
 
-`motion_match_boundary_roll_weak`, added in v0.27, is a bounded **roll edit** fallback: the timeline boundary moves while the left and right clip durations change by equal-and-opposite amounts so the total sequence duration stays fixed.
+`motion_match_boundary_roll_needed`, added in v0.27, is a bounded **roll edit** fallback: the timeline boundary moves while the left and right clip durations change by equal-and-opposite amounts so the total sequence duration stays fixed.
 
 The roll action is considered only when the less-invasive slip action is not feasible.
 
