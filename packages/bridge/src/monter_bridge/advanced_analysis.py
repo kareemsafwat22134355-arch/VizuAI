@@ -3,15 +3,16 @@ from __future__ import annotations
 from .advanced_analysis_models import (
     AdvancedAnalysisPlan,
     BoundaryAnalysisRequest,
-    SegmentationPromptContext,
     SkippedBoundary,
     SourceAnalysisWindow,
 )
 from .analysis_models import OcclusionCueSample
 from .ctl_models import CtlProgram
+from .segmentation_prompt_models import SegmentationPromptContext, SegmentationPromptSide
 from .transition_opportunities import BoundaryTransitionOpportunity, TransitionOpportunityReport
 
 OCCLUSION_SEGMENTATION_THRESHOLD = 0.58
+PROMPT_TIME_EPSILON_SECONDS = 1e-6
 
 
 def _candidate(boundary: BoundaryTransitionOpportunity):
@@ -48,11 +49,22 @@ def _windows(ctl: CtlProgram, boundary: BoundaryTransitionOpportunity, radius: f
     return left_window, right_window, left, right
 
 
+def _time_inside_window(seed: OcclusionCueSample, window: SourceAnalysisWindow) -> bool:
+    return (
+        window.source_start_seconds - PROMPT_TIME_EPSILON_SECONDS
+        <= seed.time_seconds
+        <= window.source_end_seconds + PROMPT_TIME_EPSILON_SECONDS
+    )
+
+
 def _prompt_from_seed(
     seed: OcclusionCueSample | None,
-    side: str,
+    side: SegmentationPromptSide,
+    window: SourceAnalysisWindow,
 ) -> SegmentationPromptContext | None:
     if seed is None or seed.score < OCCLUSION_SEGMENTATION_THRESHOLD:
+        return None
+    if not _time_inside_window(seed, window):
         return None
     bbox = seed.largest_component_bbox_xywh_norm
     centroid = seed.largest_component_centroid_xy_norm
@@ -62,7 +74,7 @@ def _prompt_from_seed(
     if width <= 0 or height <= 0:
         return None
     return SegmentationPromptContext(
-        side=side,  # type: ignore[arg-type]
+        side=side,
         source_time_seconds=seed.time_seconds,
         point_xy_norm=list(centroid),
         box_xyxy_norm=[
@@ -79,23 +91,28 @@ def _prompt_from_seed(
 
 def _segmentation_prompt_contexts(
     boundary: BoundaryTransitionOpportunity,
+    left_window: SourceAnalysisWindow,
+    right_window: SourceAnalysisWindow,
 ) -> tuple[SegmentationPromptContext | None, SegmentationPromptContext | None]:
-    left_prompt = _prompt_from_seed(boundary.outgoing_occlusion_seed, "left")
-    right_prompt = _prompt_from_seed(boundary.incoming_occlusion_seed, "right")
+    left_prompt = _prompt_from_seed(boundary.outgoing_occlusion_seed, "left", left_window)
+    right_prompt = _prompt_from_seed(boundary.incoming_occlusion_seed, "right", right_window)
     return left_prompt, right_prompt
 
 
-def _segmentation_motivated(boundary: BoundaryTransitionOpportunity) -> bool:
-    left_prompt, right_prompt = _segmentation_prompt_contexts(boundary)
+def _segmentation_motivated(
+    left_prompt: SegmentationPromptContext | None,
+    right_prompt: SegmentationPromptContext | None,
+) -> bool:
     return left_prompt is not None or right_prompt is not None
 
 
 def _features_with_segmentation(
     base: list[str],
-    boundary: BoundaryTransitionOpportunity,
+    left_prompt: SegmentationPromptContext | None,
+    right_prompt: SegmentationPromptContext | None,
 ) -> list[str]:
     features = list(base)
-    if _segmentation_motivated(boundary) and "segmentation" not in features:
+    if _segmentation_motivated(left_prompt, right_prompt) and "segmentation" not in features:
         features.append("segmentation")
     return features
 
@@ -103,10 +120,11 @@ def _features_with_segmentation(
 def _reason_with_segmentation(
     reason: str,
     boundary: BoundaryTransitionOpportunity,
+    left_prompt: SegmentationPromptContext | None,
+    right_prompt: SegmentationPromptContext | None,
 ) -> str:
-    if not _segmentation_motivated(boundary):
+    if not _segmentation_motivated(left_prompt, right_prompt):
         return reason
-    left_prompt, right_prompt = _segmentation_prompt_contexts(boundary)
     prompted_sides = [
         side
         for side, prompt in (("outgoing", left_prompt), ("incoming", right_prompt))
@@ -114,8 +132,8 @@ def _reason_with_segmentation(
     ]
     return (
         f"{reason} Cheap camera-compensated occlusion evidence scores "
-        f"{boundary.occlusion_candidate_score:.2f}; validated residual-component geometry exists on "
-        f"{', '.join(prompted_sides)}, so segmentation is selectively requested only for those side(s)."
+        f"{boundary.occlusion_candidate_score:.2f}; validated residual-component geometry exists inside "
+        f"the selected analysis window on {', '.join(prompted_sides)}, so segmentation is requested only for those side(s)."
     )
 
 
@@ -131,7 +149,11 @@ def _request_for_boundary(
 
     signature = boundary.cut_signature
     left_window, right_window, left_clip, right_clip = _windows(ctl, boundary)
-    left_prompt, right_prompt = _segmentation_prompt_contexts(boundary)
+    left_prompt, right_prompt = _segmentation_prompt_contexts(
+        boundary,
+        left_window,
+        right_window,
+    )
     evidence: dict[str, float | str | bool] = {
         "recommendedMechanism": boundary.recommended_mechanism,
         "relationScore": signature.relation_score,
@@ -156,16 +178,25 @@ def _request_for_boundary(
     }
 
     if boundary.recommended_mechanism == "zoom_bridge":
-        priority = min(1.0, 0.55 * candidate.motivation_score + 0.30 * candidate.feasibility_score + 0.15 * signature.global_motion_confidence)
+        priority = min(
+            1.0,
+            0.55 * candidate.motivation_score
+            + 0.30 * candidate.feasibility_score
+            + 0.15 * signature.global_motion_confidence,
+        )
         return BoundaryAnalysisRequest(
             boundary_index=boundary.boundary_index,
             priority=priority,
-            requested_features=_features_with_segmentation(["dense_flow", "depth"], boundary),
+            requested_features=_features_with_segmentation(
+                ["dense_flow", "depth"], left_prompt, right_prompt
+            ),
             left_window=left_window,
             right_window=right_window,
             reason=_reason_with_segmentation(
                 "A feasible zoom relation needs dense local motion plus selective depth before a 2.5D/scale bridge can be compiled safely.",
                 boundary,
+                left_prompt,
+                right_prompt,
             ),
             evidence=evidence,
             **request_kwargs,
@@ -174,16 +205,25 @@ def _request_for_boundary(
     if boundary.recommended_mechanism == "directional_bridge":
         borderline = signature.relation_score < 0.75 or signature.global_motion_confidence < 0.65
         if borderline:
-            priority = min(1.0, 0.50 * candidate.motivation_score + 0.30 * candidate.feasibility_score + 0.20 * (1.0 - signature.global_motion_confidence))
+            priority = min(
+                1.0,
+                0.50 * candidate.motivation_score
+                + 0.30 * candidate.feasibility_score
+                + 0.20 * (1.0 - signature.global_motion_confidence),
+            )
             return BoundaryAnalysisRequest(
                 boundary_index=boundary.boundary_index,
                 priority=priority,
-                requested_features=_features_with_segmentation(["dense_flow"], boundary),
+                requested_features=_features_with_segmentation(
+                    ["dense_flow"], left_prompt, right_prompt
+                ),
                 left_window=left_window,
                 right_window=right_window,
                 reason=_reason_with_segmentation(
                     "The directional bridge is feasible but global-motion evidence is borderline; dense flow is budgeted only around this boundary for validation.",
                     boundary,
+                    left_prompt,
+                    right_prompt,
                 ),
                 evidence=evidence,
                 **request_kwargs,
@@ -205,15 +245,22 @@ def _request_for_boundary(
         return BoundaryAnalysisRequest(
             boundary_index=boundary.boundary_index,
             priority=priority,
-            requested_features=_features_with_segmentation(["dense_flow"], boundary),
+            requested_features=_features_with_segmentation(
+                ["dense_flow"], left_prompt, right_prompt
+            ),
             left_window=left_window,
             right_window=right_window,
-            reason=_reason_with_segmentation(base_reason, boundary),
+            reason=_reason_with_segmentation(
+                base_reason,
+                boundary,
+                left_prompt,
+                right_prompt,
+            ),
             evidence=evidence,
             **request_kwargs,
         )
 
-    if _segmentation_motivated(boundary):
+    if _segmentation_motivated(left_prompt, right_prompt):
         priority = min(1.0, 0.45 + 0.50 * boundary.occlusion_candidate_score)
         return BoundaryAnalysisRequest(
             boundary_index=boundary.boundary_index,
@@ -224,6 +271,8 @@ def _request_for_boundary(
             reason=_reason_with_segmentation(
                 "No additional dense-flow/depth refinement is justified by the current transition mechanism.",
                 boundary,
+                left_prompt,
+                right_prompt,
             ),
             evidence=evidence,
             **request_kwargs,
@@ -297,7 +346,7 @@ def build_advanced_analysis_plan(
         skipped_boundaries=sorted(skipped, key=lambda item: item.boundary_index),
         notes=[
             "This plan schedules expensive analysis only; it does not execute model backends.",
-            "Segmentation is requested only when cheap camera-compensated foreground evidence crosses the threshold and the same residual component provides valid normalized prompt geometry.",
+            "Segmentation is requested only when cheap camera-compensated foreground evidence crosses the threshold, supplies valid normalized geometry, and the exact cue time lies inside the selected source-analysis window.",
             "Segmentation prompt contexts preserve source time, point, box, confidence, edge, and provenance independently from any concrete model API.",
             "Depth is currently requested only for feasible zoom-bridge opportunities.",
             "Dense flow is limited to ambiguous action/directional boundaries, depth-assisted zoom candidates, or mandatory post-revision verification.",
