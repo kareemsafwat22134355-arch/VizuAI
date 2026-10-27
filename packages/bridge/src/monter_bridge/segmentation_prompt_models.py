@@ -32,4 +32,7 @@ class SegmentationPromptContext(PortableModel):
         x1, y1, x2, y2 = self.box_xyxy_norm
         if x2 <= x1 or y2 <= y1:
             raise ValueError("segmentation prompt box must have positive normalized area")
+        point_x, point_y = self.point_xy_norm
+        if not (x1 <= point_x <= x2 and y1 <= point_y <= y2):
+            raise ValueError("segmentation prompt point must lie inside its normalized box")
         return self
