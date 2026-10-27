@@ -8,12 +8,14 @@ from .models import PortableModel
 
 SEGMENTATION_ARTIFACT_SCHEMA_VERSION = "segmentation-artifact-0.1"
 SegmentationSide = Literal["left", "right"]
+SegmentationParameter = str | int | float | bool
 
 
 class SegmentationBackendDescriptor(PortableModel):
     backend_id: str
     backend_version: str
     model_id: str
+    parameters: dict[str, SegmentationParameter] = Field(default_factory=dict)
 
 
 class SegmentationFrameArtifact(PortableModel):
