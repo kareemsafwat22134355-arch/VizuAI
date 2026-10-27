@@ -6,7 +6,8 @@ import cv2
 import numpy as np
 
 from .analysis_models import OcclusionCueSample, OcclusionCueSummary, OcclusionEdge
-from .global_motion import estimate_pair
+
+GlobalEstimate = tuple[float, float, float, float, float]
 
 
 def _affine_matrix(tx: float, ty: float, rotation_degrees: float, scale: float) -> np.ndarray:
@@ -47,15 +48,15 @@ def measure_occlusion_cue(
     previous_gray: np.ndarray,
     current_gray: np.ndarray,
     time_seconds: float,
+    global_estimate: GlobalEstimate | None,
 ) -> OcclusionCueSample:
     if previous_gray.shape != current_gray.shape:
         raise ValueError("occlusion cue frames must have matching shapes")
 
-    estimate = estimate_pair(previous_gray, current_gray)
     compensation_confidence = 0.0
     aligned_previous = previous_gray
-    if estimate is not None:
-        tx, ty, rotation, scale, inlier_ratio = estimate
+    if global_estimate is not None:
+        tx, ty, rotation, scale, inlier_ratio = global_estimate
         matrix = _affine_matrix(tx, ty, rotation, scale)
         aligned_previous = cv2.warpAffine(
             previous_gray,
