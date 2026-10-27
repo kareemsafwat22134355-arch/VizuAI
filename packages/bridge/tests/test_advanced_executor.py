@@ -46,7 +46,11 @@ def plan(project_id: str = "p") -> AdvancedAnalysisPlan:
                 left_window=SourceAnalysisWindow(segment_id="s1", asset_id="a", shot_id="sa", source_start_seconds=.2, source_end_seconds=1.6),
                 right_window=SourceAnalysisWindow(segment_id="s2", asset_id="b", shot_id="sb", source_start_seconds=.2, source_end_seconds=1.6),
                 reason="fixture",
-                evidence={"recommendedMechanism": "zoom_bridge"},
+                evidence={
+                    "recommendedMechanism": "zoom_bridge",
+                    "leftSourceOutSeconds": 1.20,
+                    "rightSourceInSeconds": .60,
+                },
             )
         ],
     )
@@ -83,10 +87,24 @@ def test_executor_runs_dense_flow_and_reports_unavailable_depth(tmp_path: Path):
 
     assert dense_flow.status == "completed"
     assert dense_flow.backend == "opencv-farneback"
+    assert boundary.request_evidence["leftSourceOutSeconds"] == pytest.approx(1.20)
+    assert boundary.request_evidence["rightSourceInSeconds"] == pytest.approx(.60)
     assert boundary.left_flow is not None and boundary.left_flow.sample_count > 0
     assert boundary.right_flow is not None and boundary.right_flow.sample_count > 0
     assert boundary.flow_direction_compatibility is not None
     assert 0 <= boundary.flow_direction_compatibility <= 1
+
+    for summary in (boundary.left_flow, boundary.right_flow):
+        assert summary.peak_time_seconds is not None
+        assert summary.onset_time_seconds is not None
+        assert summary.source_start_seconds <= summary.onset_time_seconds <= summary.peak_time_seconds <= summary.source_end_seconds
+        assert summary.peak_magnitude >= 0
+        assert summary.temporal_contrast >= 0
+
+    assert "leftPeakTimeSeconds" in dense_flow.metrics
+    assert "leftOnsetTimeSeconds" in dense_flow.metrics
+    assert "rightPeakTimeSeconds" in dense_flow.metrics
+    assert "rightOnsetTimeSeconds" in dense_flow.metrics
     assert depth.status == "backend_unavailable"
     assert depth.backend == "unconfigured"
 
