@@ -1,3 +1,5 @@
+import pytest
+
 from monter_bridge.advanced_execution_models import (
     AdvancedAnalysisResults,
     BoundaryExecutionResult,
