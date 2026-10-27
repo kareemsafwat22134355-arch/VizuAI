@@ -55,6 +55,12 @@ The analysis algorithm fingerprint changes from `motion-global-v2` to `motion-gl
 
 Existing cached VIR analyses are intentionally invalidated so old shots cannot silently appear to have valid occlusion evidence.
 
+## Video Microscope compatibility
+
+The finished-video Video Microscope uses the same combined motion sampler as source-footage analysis. It now carries the third occlusion signal into each observed `ShotAnalysis` instead of discarding it or maintaining a separate perception path.
+
+This keeps source analysis and finished-edit research on the same physical-evidence contract: motion, camera motion, and occlusion likelihood are derived consistently from the same sampled frame pairs.
+
 ## Boundary evidence
 
 Transition-opportunity synthesis does not invent a new mechanism. It only localizes occlusion cues around the current source cut (within ±0.45s) and records:
@@ -143,4 +149,5 @@ The milestone is accepted only if:
 - timewarp ownership still blocks extra analysis;
 - missing segmentation backend reports `backend_unavailable` explicitly;
 - analysis cache invalidates the pre-occlusion algorithm version;
+- Video Microscope real-media analysis consumes the same occlusion-aware sampler contract;
 - all existing Studio and Bridge/real-media CI gates remain green.
