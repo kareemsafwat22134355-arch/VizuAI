@@ -47,6 +47,7 @@ def _proxy_content_digest(video_path: Path) -> str:
 
 def _cache_key(
     video_path: Path,
+    input_digest: str,
     window: SourceAnalysisWindow,
     side: SegmentationSide,
     backend: SegmentationBackendDescriptor,
@@ -55,7 +56,7 @@ def _cache_key(
 ) -> str:
     stat = video_path.stat()
     payload = {
-        "proxyDigest": _proxy_content_digest(video_path),
+        "proxyDigest": input_digest,
         "proxySizeBytes": stat.st_size,
         "segmentId": window.segment_id,
         "assetId": window.asset_id,
@@ -151,6 +152,7 @@ def _load_cached(
     cache_root: Path,
     cache_key: str,
     descriptor: SegmentationBackendDescriptor,
+    input_digest: str,
 ) -> SegmentationWindowArtifact | None:
     manifest = cache_root / cache_key / "manifest.json"
     if not manifest.is_file():
@@ -159,7 +161,11 @@ def _load_cached(
         artifact = SegmentationWindowArtifact.model_validate_json(manifest.read_text(encoding="utf-8"))
     except Exception:
         return None
-    if artifact.cache_key != cache_key or artifact.backend != descriptor:
+    if (
+        artifact.cache_key != cache_key
+        or artifact.backend != descriptor
+        or artifact.input_digest != input_digest
+    ):
         return None
 
     root = cache_root.resolve()
@@ -185,10 +191,11 @@ def execute_segmentation_window(
     analysis_width: int = 320,
 ) -> SegmentationWindowArtifact:
     descriptor = SegmentationBackendDescriptor.model_validate(backend.descriptor)
-    key = _cache_key(video_path, window, side, descriptor, sample_fps, analysis_width)
+    input_digest = _proxy_content_digest(video_path)
+    key = _cache_key(video_path, input_digest, window, side, descriptor, sample_fps, analysis_width)
     cache_root.mkdir(parents=True, exist_ok=True)
 
-    cached = _load_cached(cache_root, key, descriptor)
+    cached = _load_cached(cache_root, key, descriptor, input_digest)
     if cached is not None:
         return cached
 
@@ -228,6 +235,7 @@ def execute_segmentation_window(
             sample_fps=sample_fps,
             analysis_width=analysis_width,
             backend=descriptor,
+            input_digest=input_digest,
             cache_key=key,
             cache_hit=False,
             frames=frames,
