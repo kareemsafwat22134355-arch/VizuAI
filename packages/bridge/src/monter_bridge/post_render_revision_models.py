@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import Field
 
 from .models import PortableModel
 
 POST_RENDER_REVISION_SCHEMA_VERSION = "post-render-revision-0.1"
+RevisionVerificationStatus = Literal["not_required", "pass", "failed"]
 
 
 class PostRenderRevisionReport(PortableModel):
@@ -21,6 +24,9 @@ class PostRenderRevisionReport(PortableModel):
     candidate_automatic_candidates: int | None = Field(default=None, ge=0)
     changed_segments: list[str] = Field(default_factory=list)
     changed_boundaries: list[int] = Field(default_factory=list)
+    verification_status: RevisionVerificationStatus = "not_required"
+    verified_boundaries: list[int] = Field(default_factory=list)
+    failed_verification_boundaries: list[int] = Field(default_factory=list)
     candidate_dir: str | None = None
     baseline_snapshot_dir: str | None = None
     promoted_artifacts: list[str] = Field(default_factory=list)
