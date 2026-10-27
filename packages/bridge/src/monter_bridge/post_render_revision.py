@@ -25,9 +25,11 @@ from .render import render_draft
 from .render_analysis import analyze_render
 from .render_analysis_models import RenderAnalysisReport
 from .revision import revise_edit_plan
+from .revision_verification import required_advanced_action_boundaries, verify_revision_actions
 from .sound_director import build_sound_directed_audio_plan, direct_sound
 from .transition_opportunities import synthesize_transition_opportunities
 from .transition_refinement import refine_transition_opportunities
+from .transition_refinement_models import TransitionRefinementReport
 
 
 AUTO_REVISION_CODES = {
@@ -194,6 +196,8 @@ def attempt_post_render_revision(
         for action in revision_report.actions
         if action.kind in {"realign_boundary", "roll_boundary"} and action.boundary_index is not None
     ]
+    required_verification_boundaries = required_advanced_action_boundaries(revision_report)
+
     if not revision_report.changed:
         return PostRenderRevisionReport(
             project_id=project.project_id,
@@ -220,6 +224,7 @@ def attempt_post_render_revision(
         base_ctl,
         transitions,
         max_boundaries=max_advanced_boundaries,
+        forced_action_boundaries=required_verification_boundaries,
     )
     write_model(candidate_dir / "transition-opportunities.json", transitions)
     write_model(candidate_dir / "advanced-analysis-plan.json", advanced_plan)
@@ -227,6 +232,7 @@ def attempt_post_render_revision(
     ctl = base_ctl
     advanced_boundaries_executed = 0
     transition_refinements_applied = 0
+    refinement: TransitionRefinementReport | None = None
     if run_advanced_pass:
         advanced_results = execute_advanced_analysis(
             project,
@@ -298,7 +304,8 @@ def attempt_post_render_revision(
     )
     write_model(candidate_dir / "final-critic-report.json", candidate_final)
 
-    accepted = candidate_final.status == "pass"
+    verification = verify_revision_actions(revision_report, refinement)
+    accepted = candidate_final.status == "pass" and verification.status != "failed"
     baseline_dir: Path | None = None
     promoted: list[str] = []
     if accepted:
@@ -306,29 +313,43 @@ def attempt_post_render_revision(
         _snapshot_baseline(work_dir, baseline_dir)
         promoted = _promote_candidate(candidate_dir, work_dir)
 
+    if accepted:
+        reason = (
+            "Candidate passed the full post-render Final Critic and every mandatory revision-verification gate, "
+            "then was promoted after the canonical baseline was snapshotted."
+        )
+    elif candidate_final.status != "pass":
+        reason = "Candidate did not reach Final Critic pass; canonical baseline artifacts were left untouched."
+    else:
+        reason = (
+            "Candidate reached Final Critic pass but failed mandatory advanced action-timing verification; "
+            "canonical baseline artifacts were left untouched."
+        )
+
     report = PostRenderRevisionReport(
         project_id=project.project_id,
         eligible=True,
         attempted=True,
         changed=True,
         accepted=accepted,
-        reason=(
-            "Candidate passed the full post-render Final Critic and was promoted after the canonical baseline was snapshotted."
-            if accepted
-            else "Candidate did not reach Final Critic pass; canonical baseline artifacts were left untouched."
-        ),
+        reason=reason,
         baseline_final_status=baseline_final_critic.status,
         candidate_final_status=candidate_final.status,
         baseline_automatic_candidates=baseline_final_critic.automatic_revision_candidates,
         candidate_automatic_candidates=candidate_final.automatic_revision_candidates,
         changed_segments=changed_segments,
         changed_boundaries=changed_boundaries,
+        verification_status=verification.status,
+        verified_boundaries=verification.verified_boundaries,
+        failed_verification_boundaries=verification.failed_boundaries,
         candidate_dir=candidate_dir.name,
         baseline_snapshot_dir=baseline_dir.name if baseline_dir is not None else None,
         promoted_artifacts=promoted,
         notes=[
             "Exactly one post-render edit candidate attempt is permitted.",
             "Render/audio integrity errors never authorize an edit mutation.",
+            "Advanced action-timing roll revisions require the same boundary to return confirmed action-cut timing after candidate dense-flow re-analysis.",
+            *verification.notes,
             "Rejected candidates remain inspectable under post-render-candidate-01 while canonical artifacts stay unchanged.",
         ],
     )
