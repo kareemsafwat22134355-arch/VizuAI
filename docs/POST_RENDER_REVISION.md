@@ -34,12 +34,12 @@ energy_mismatch
 low_confidence_selection
 immediate_repetition
 motion_match_timing_weak
-motion_match_boundary_roll_weak
+motion_match_boundary_roll_needed
 ```
 
 `motion_match_timing_weak` is a bounded slip edit on an existing `motion_match_cut`; it moves source windows while preserving the timeline boundary.
 
-`motion_match_boundary_roll_weak` is a bounded roll-edit fallback. It is eligible only when the less-invasive slip edit is not feasible. The boundary moves on the timeline while adjacent clip durations change by equal-and-opposite amounts, preserving total sequence duration.
+`motion_match_boundary_roll_needed` is a bounded roll-edit fallback. It is eligible only when the less-invasive slip edit is not feasible. The boundary moves on the timeline while adjacent clip durations change by equal-and-opposite amounts, preserving total sequence duration.
 
 Neither finding authorizes changing a deliberate `hard_cut`.
 
