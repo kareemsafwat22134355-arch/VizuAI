@@ -7,6 +7,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from .segmentation_backend_registry import discover_segmentation_backends
+
 
 def _binary_status(name: str) -> dict[str, object]:
     path = shutil.which(name)
@@ -49,6 +51,11 @@ def doctor_report(work_dir: Path | None = None) -> dict[str, object]:
     if writable is False:
         checks_ok = False
 
+    segmentation_backends = [
+        backend.model_dump(by_alias=True, mode="json")
+        for backend in discover_segmentation_backends()
+    ]
+
     return {
         "ok": checks_ok,
         "python": {
@@ -58,6 +65,9 @@ def doctor_report(work_dir: Path | None = None) -> dict[str, object]:
         },
         "binaries": binaries,
         "workDirWritable": writable,
+        "optionalCapabilities": {
+            "segmentationBackends": segmentation_backends,
+        },
         "profile": {
             "targetRamGb": 8,
             "strategy": "proxy-first progressive analysis",
