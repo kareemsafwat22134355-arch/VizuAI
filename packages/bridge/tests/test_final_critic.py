@@ -77,14 +77,14 @@ def test_motion_match_boundary_roll_preserves_boundary_identity_as_automatic_can
     report = build_final_critic(editorial(
         status="needs_revision",
         findings=[CriticFinding(
-            code="motion_match_boundary_roll_weak",
+            code="motion_match_boundary_roll_needed",
             severity="warning",
             boundary_index=4,
             message="bounded roll can improve phase timing",
         )],
     ))
 
-    finding = next(item for item in report.findings if item.code == "motion_match_boundary_roll_weak")
+    finding = next(item for item in report.findings if item.code == "motion_match_boundary_roll_needed")
     assert report.status == "needs_revision"
     assert report.automatic_revision_candidates == 1
     assert finding.domain == "editorial"
