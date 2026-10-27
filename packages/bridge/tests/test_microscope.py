@@ -103,7 +103,7 @@ def test_inspector_keeps_portable_source_label_and_handles_motionless_shots(monk
             TimeRange(start_seconds=2.0, end_seconds=3.0),
         ],
     )
-    monkeypatch.setattr(microscope_module, "sample_motion_signals", lambda *args, **kwargs: ([], []))
+    monkeypatch.setattr(microscope_module, "sample_motion_signals", lambda *args, **kwargs: ([], [], []))
 
     report = inspect_finished_video(Path("/private/user/path/edit.mp4"), source_label="Manual Edit 01")
 
