@@ -59,6 +59,8 @@ class OcclusionCueSample(PortableModel):
     score: float = Field(ge=0, le=1)
     residual_change_fraction: float = Field(ge=0, le=1)
     largest_component_fraction: float = Field(ge=0, le=1)
+    largest_component_bbox_xywh_norm: list[float] | None = Field(default=None, min_length=4, max_length=4)
+    largest_component_centroid_xy_norm: list[float] | None = Field(default=None, min_length=2, max_length=2)
     edge_contact_fraction: float = Field(ge=0, le=1)
     dominant_edge: OcclusionEdge = "none"
     compensation_confidence: float = Field(default=0.0, ge=0, le=1)
