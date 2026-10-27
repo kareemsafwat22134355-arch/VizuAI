@@ -27,14 +27,26 @@ function makeBundle(finalProjectId = "p") {
     automaticRevisionCandidates: 1,
     manualReviewFindings: 1,
     metrics: [],
-    findings: [{
-      code: "duration_drift",
-      domain: "render_integrity",
-      severity: "error",
-      reviseability: "manual_only",
-      message: "encoded duration drifted",
-      sourceArtifact: "render-analysis.json",
-    }],
+    findings: [
+      {
+        code: "action_cut_timing_shift_needed",
+        domain: "editorial",
+        severity: "warning",
+        reviseability: "automatic_candidate",
+        message: "dense flow supports a local roll",
+        sourceArtifact: "critic-report.json",
+        boundaryIndex: 2,
+        suggestedShiftSeconds: .25,
+      },
+      {
+        code: "duration_drift",
+        domain: "render_integrity",
+        severity: "error",
+        reviseability: "manual_only",
+        message: "encoded duration drifted",
+        sourceArtifact: "render-analysis.json",
+      },
+    ],
     notes: [],
   };
   return new Blob([zipSync({
@@ -45,11 +57,14 @@ function makeBundle(finalProjectId = "p") {
 }
 
 describe("final critic bundle import", () => {
-  it("keeps consolidated quality evidence available to Studio", async () => {
+  it("keeps consolidated quality and typed timing evidence available to Studio", async () => {
     const result = await importMonterBundle(makeBundle());
     expect(result.finalCritic?.status).toBe("needs_review");
     expect(result.finalCritic?.automaticRevisionCandidates).toBe(1);
-    expect(result.finalCritic?.findings[0].domain).toBe("render_integrity");
+    expect(result.finalCritic?.findings[0].domain).toBe("editorial");
+    expect(result.finalCritic?.findings[0].boundaryIndex).toBe(2);
+    expect(result.finalCritic?.findings[0].suggestedShiftSeconds).toBe(.25);
+    expect(result.finalCritic?.findings[1].domain).toBe("render_integrity");
     expect(result.ignoredEntries).not.toContain("final-critic-report.json");
   });
 
