@@ -73,6 +73,26 @@ def test_motion_match_timing_preserves_boundary_identity_as_automatic_candidate(
     assert finding.segment_id is None
 
 
+def test_motion_match_boundary_roll_preserves_boundary_identity_as_automatic_candidate():
+    report = build_final_critic(editorial(
+        status="needs_revision",
+        findings=[CriticFinding(
+            code="motion_match_boundary_roll_weak",
+            severity="warning",
+            boundary_index=4,
+            message="bounded roll can improve phase timing",
+        )],
+    ))
+
+    finding = next(item for item in report.findings if item.code == "motion_match_boundary_roll_weak")
+    assert report.status == "needs_revision"
+    assert report.automatic_revision_candidates == 1
+    assert finding.domain == "editorial"
+    assert finding.reviseability == "automatic_candidate"
+    assert finding.boundary_index == 4
+    assert finding.segment_id is None
+
+
 def test_render_integrity_error_overrides_editorial_pass_and_remains_manual_only():
     render = render_report(
         status="needs_review",
