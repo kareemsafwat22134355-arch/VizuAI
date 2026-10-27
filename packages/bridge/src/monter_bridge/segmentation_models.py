@@ -5,9 +5,11 @@ from typing import Literal
 from pydantic import Field
 
 from .models import PortableModel
+from .segmentation_prompt_models import SegmentationPromptContext
 
-SEGMENTATION_ARTIFACT_SCHEMA_VERSION = "segmentation-artifact-0.1"
+SEGMENTATION_ARTIFACT_SCHEMA_VERSION = "segmentation-artifact-0.2"
 SegmentationSide = Literal["left", "right"]
+SegmentationExecutionMode = Literal["frame", "window"]
 SegmentationParameter = str | int | float | bool
 
 
@@ -38,6 +40,8 @@ class SegmentationWindowArtifact(PortableModel):
     sample_fps: float = Field(gt=0)
     analysis_width: int = Field(ge=64)
     backend: SegmentationBackendDescriptor
+    execution_mode: SegmentationExecutionMode = "frame"
+    prompt_context: SegmentationPromptContext | None = None
     input_digest: str
     cache_key: str
     cache_hit: bool = False
