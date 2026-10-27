@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
+from functools import lru_cache
 from pathlib import Path
 from typing import Protocol
 
@@ -26,6 +27,24 @@ class SegmentationBackend(Protocol):
         ...
 
 
+@lru_cache(maxsize=64)
+def _content_digest_cached(path_text: str, size_bytes: int, mtime_ns: int) -> str:
+    digest = hashlib.blake2s(digest_size=16)
+    with Path(path_text).open("rb") as handle:
+        while True:
+            chunk = handle.read(1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _proxy_content_digest(video_path: Path) -> str:
+    resolved = video_path.resolve()
+    stat = resolved.stat()
+    return _content_digest_cached(str(resolved), stat.st_size, stat.st_mtime_ns)
+
+
 def _cache_key(
     video_path: Path,
     window: SourceAnalysisWindow,
@@ -36,8 +55,8 @@ def _cache_key(
 ) -> str:
     stat = video_path.stat()
     payload = {
+        "proxyDigest": _proxy_content_digest(video_path),
         "proxySizeBytes": stat.st_size,
-        "proxyMtimeNs": stat.st_mtime_ns,
         "segmentId": window.segment_id,
         "assetId": window.asset_id,
         "shotId": window.shot_id,
