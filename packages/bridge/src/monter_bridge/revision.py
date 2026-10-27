@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 
+from .action_cut_roll import apply_action_cut_boundary_roll, propose_action_cut_boundary_roll
 from .analysis_models import ShotAnalysis, VirProject
 from .critic_models import CriticReport, RevisionAction, RevisionReport
 from .motion_match_realign import apply_motion_match_realign, propose_motion_match_realign
@@ -32,9 +33,11 @@ def revise_edit_plan(edit: EditPlan, vir: VirProject, report: CriticReport) -> t
             requested_ids.append(finding.segment_id)
 
     # Timing actions run before whole-shot replacement, but never on a boundary whose
-    # adjacent segment is already scheduled for replacement. Replacement invalidates anchors.
+    # adjacent segment is already scheduled for replacement. Replacement invalidates
+    # both cheap anchors and advanced flow evidence tied to the previous shot pair.
     slip_boundaries: list[int] = []
     roll_boundaries: list[int] = []
+    advanced_action_rolls: list[tuple[int, float]] = []
     for finding in report.findings:
         if finding.boundary_index is None:
             continue
@@ -45,6 +48,12 @@ def revise_edit_plan(edit: EditPlan, vir: VirProject, report: CriticReport) -> t
             and finding.boundary_index not in roll_boundaries
         ):
             roll_boundaries.append(finding.boundary_index)
+        elif (
+            finding.code == "action_cut_timing_shift_needed"
+            and finding.suggested_shift_seconds is not None
+            and all(boundary != finding.boundary_index for boundary, _ in advanced_action_rolls)
+        ):
+            advanced_action_rolls.append((finding.boundary_index, finding.suggested_shift_seconds))
 
     for boundary_index in slip_boundaries:
         if boundary_index < 1 or boundary_index >= len(revised.segments):
@@ -84,6 +93,32 @@ def revise_edit_plan(edit: EditPlan, vir: VirProject, report: CriticReport) -> t
             reason=(
                 "Critic identified a motion_match_cut whose weak phase timing cannot be fixed by slip; "
                 "the shared timeline boundary was rolled while total sequence duration remained unchanged."
+            ),
+            boundary_index=boundary_index,
+            boundary_shift_seconds=proposal.boundary_shift_seconds,
+        ))
+
+    for boundary_index, suggested_shift in advanced_action_rolls:
+        if boundary_index < 1 or boundary_index >= len(revised.segments):
+            continue
+        left = revised.segments[boundary_index - 1]
+        right = revised.segments[boundary_index]
+        if left.id in requested_ids or right.id in requested_ids:
+            continue
+        proposal = propose_action_cut_boundary_roll(
+            revised,
+            vir,
+            boundary_index,
+            suggested_shift,
+        )
+        if proposal is None:
+            continue
+        apply_action_cut_boundary_roll(revised, proposal)
+        actions.append(RevisionAction(
+            kind="roll_boundary",
+            reason=(
+                "Final editorial evidence localized a reliable common action-timing shift with selective dense flow; "
+                "the shared action-cut boundary was rolled by that typed shift after physical bounds were revalidated."
             ),
             boundary_index=boundary_index,
             boundary_shift_seconds=proposal.boundary_shift_seconds,
