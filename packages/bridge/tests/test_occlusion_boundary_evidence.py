@@ -32,11 +32,14 @@ def _shot(shot_id: str, asset_id: str, start: float, end: float, samples: list[O
 
 
 def _sample(time: float, score: float, edge: str = "left") -> OcclusionCueSample:
+    x = 0.0 if edge == "left" else .72 if edge == "right" else .25
     return OcclusionCueSample(
         time_seconds=time,
         score=score,
         residual_change_fraction=.2,
         largest_component_fraction=.15,
+        largest_component_bbox_xywh_norm=[x, .2, .24, .6],
+        largest_component_centroid_xy_norm=[x + .12, .5],
         edge_contact_fraction=.6,
         dominant_edge=edge,
         compensation_confidence=.8,
@@ -65,9 +68,10 @@ def _plan() -> EditPlan:
     )
 
 
-def test_outgoing_occlusion_near_cut_becomes_boundary_evidence():
+def test_outgoing_occlusion_near_cut_becomes_boundary_evidence_and_seed():
+    seed = _sample(1.9, .82, "left")
     vir = VirProject.new("p", [
-        _shot("sa", "a", 0, 3, [_sample(1.9, .82, "left")]),
+        _shot("sa", "a", 0, 3, [seed]),
         _shot("sb", "b", 0, 3, []),
     ])
 
@@ -76,9 +80,12 @@ def test_outgoing_occlusion_near_cut_becomes_boundary_evidence():
     assert boundary.occlusion_candidate_score == .82
     assert boundary.occlusion_side == "outgoing"
     assert boundary.occlusion_edge == "left"
+    assert boundary.outgoing_occlusion_seed == seed
+    assert boundary.incoming_occlusion_seed is None
+    assert boundary.outgoing_occlusion_seed.largest_component_centroid_xy_norm == [.12, .5]
 
 
-def test_distant_occlusion_does_not_motivate_boundary():
+def test_distant_occlusion_does_not_motivate_boundary_or_leak_seed():
     vir = VirProject.new("p", [
         _shot("sa", "a", 0, 3, [_sample(.8, .9, "left")]),
         _shot("sb", "b", 0, 3, []),
@@ -89,12 +96,16 @@ def test_distant_occlusion_does_not_motivate_boundary():
     assert boundary.occlusion_candidate_score == 0.0
     assert boundary.occlusion_side == "none"
     assert boundary.occlusion_edge == "none"
+    assert boundary.outgoing_occlusion_seed is None
+    assert boundary.incoming_occlusion_seed is None
 
 
-def test_occlusion_on_both_sides_is_preserved_without_inventing_a_single_edge():
+def test_occlusion_on_both_sides_preserves_each_seed_without_inventing_one_geometry():
+    outgoing = _sample(1.9, .76, "left")
+    incoming = _sample(1.1, .72, "right")
     vir = VirProject.new("p", [
-        _shot("sa", "a", 0, 3, [_sample(1.9, .76, "left")]),
-        _shot("sb", "b", 0, 3, [_sample(1.1, .72, "right")]),
+        _shot("sa", "a", 0, 3, [outgoing]),
+        _shot("sb", "b", 0, 3, [incoming]),
     ])
 
     boundary = synthesize_transition_opportunities(_plan(), vir).boundaries[0]
@@ -102,3 +113,6 @@ def test_occlusion_on_both_sides_is_preserved_without_inventing_a_single_edge():
     assert boundary.occlusion_candidate_score == .76
     assert boundary.occlusion_side == "both"
     assert boundary.occlusion_edge == "mixed"
+    assert boundary.outgoing_occlusion_seed == outgoing
+    assert boundary.incoming_occlusion_seed == incoming
+    assert boundary.outgoing_occlusion_seed.largest_component_bbox_xywh_norm != boundary.incoming_occlusion_seed.largest_component_bbox_xywh_norm
